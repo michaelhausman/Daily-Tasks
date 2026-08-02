@@ -5,6 +5,7 @@ import { Chip } from "@/components/Chip";
 import { Comments } from "@/components/Comments";
 import { FollowButton } from "@/components/FollowButton";
 import { MediaGrid } from "@/components/MediaCard";
+import { ReportButton } from "@/components/ReportButton";
 import { getCurrentUser } from "@/lib/auth/session";
 import { isAdmin } from "@/lib/config";
 import { findMedia, findMoments } from "@/lib/media/queries";
@@ -171,13 +172,21 @@ export default async function MomentPage({
 
       <MediaGrid items={items} likes={likes} loggedIn={Boolean(user)} />
 
-      <p className="text-center text-sm muted">
-        Were you there too?{" "}
-        <Link href="/upload" style={{ color: "#7c5cff" }}>
-          Add your photos
-        </Link>
-        .
-      </p>
+      <div className="flex flex-wrap items-center justify-center gap-4 text-sm">
+        <p className="muted">
+          Were you there too?{" "}
+          <Link href="/upload" style={{ color: "#7c5cff" }}>
+            Add your photos
+          </Link>
+          .
+        </p>
+        <ReportButton
+          whereSlug={where}
+          eventDate={date}
+          loggedIn={Boolean(user)}
+          compact
+        />
+      </div>
 
       <div className="surface rounded-2xl p-5">
         <Comments

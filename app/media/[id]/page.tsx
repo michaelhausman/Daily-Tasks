@@ -6,6 +6,7 @@ import { Chip } from "@/components/Chip";
 import { Comments } from "@/components/Comments";
 import { LikeButton } from "@/components/LikeButton";
 import { MediaGrid } from "@/components/MediaCard";
+import { ReportButton } from "@/components/ReportButton";
 import { getCurrentUser } from "@/lib/auth/session";
 import { isAdmin } from "@/lib/config";
 import { canDelete } from "@/lib/media/delete";
@@ -25,7 +26,8 @@ export default async function MediaPage({
   const { id } = await params;
   const user = await getCurrentUser();
 
-  const item = await getMediaById(id, user?.id);
+  const viewerIsAdmin = isAdmin(user?.handle);
+  const item = await getMediaById(id, user?.id, viewerIsAdmin);
   if (!item) notFound();
 
   const whoTags = item.tags.filter((t) => t.facet === "who");
@@ -63,6 +65,28 @@ export default async function MediaPage({
 
   return (
     <div className="space-y-6">
+      {item.hiddenAt && (
+        <div
+          className="rounded-xl px-4 py-3 text-sm"
+          style={{
+            background: "#f0525218",
+            border: "1px solid #f05252",
+          }}
+        >
+          <strong style={{ color: "#f05252" }}>
+            This upload is hidden and only you can see it.
+          </strong>
+          <p className="mt-1 muted">
+            Reason: {item.hiddenReason ?? "no reason recorded"}. It won&apos;t
+            appear in browse, moments, or anyone else&apos;s feed. See the{" "}
+            <Link href="/rules" style={{ color: "#7c5cff" }}>
+              house rules
+            </Link>
+            .
+          </p>
+        </div>
+      )}
+
       <div className="surface overflow-hidden rounded-2xl">
         {item.kind === "photo" && (
           // eslint-disable-next-line @next/next/no-img-element
@@ -160,14 +184,17 @@ export default async function MediaPage({
           </Link>
         )}
 
-        {canDelete(user, item.ownerId) && (
-          <div
-            className="border-t pt-4"
-            style={{ borderColor: "var(--border)" }}
-          >
+        <div
+          className="flex flex-wrap items-start gap-4 border-t pt-4"
+          style={{ borderColor: "var(--border)" }}
+        >
+          {canDelete(user, item.ownerId) && (
             <DeleteButton mediaId={item.id} isOwn={user?.id === item.ownerId} />
+          )}
+          <div className="flex-1">
+            <ReportButton mediaId={item.id} loggedIn={Boolean(user)} />
           </div>
-        )}
+        </div>
       </div>
 
       <div className="surface rounded-2xl p-5">

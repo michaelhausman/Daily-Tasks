@@ -113,6 +113,16 @@ export async function logIn(
     return { error: "Incorrect handle/email or password." };
   }
 
+  // Checked after the password so a suspension isn't discoverable by anyone
+  // who merely guesses a handle.
+  if (user.suspendedAt) {
+    return {
+      error: `This account is suspended. ${
+        user.suspendedReason ?? ""
+      }`.trim(),
+    };
+  }
+
   await purgeExpiredSessions();
   await createSession(user.id);
   redirect("/");

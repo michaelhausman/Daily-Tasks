@@ -100,6 +100,17 @@ function facetCondition(facet: Facet, slugs: string[]): SQL {
 function buildFilters(sel: FacetSelection, viewerId?: string): SQL[] {
   const filters: SQL[] = [eq(media.status, "ready")];
 
+  /**
+   * Hidden media is excluded from every listing, for everybody — including its
+   * owner. A moderator hiding something and the uploader still seeing it in
+   * their own feed would be a confusing half-measure; they see it on the item's
+   * own page instead, with an explanation.
+   *
+   * Suspending an account hides everything it posted by the same mechanism, so
+   * there's only one rule to reason about here.
+   */
+  filters.push(sql`${media.hiddenAt} IS NULL`);
+
   // Unlisted media is reachable by direct link but never surfaces in browse —
   // except for its owner, who should see their own uploads in their feed.
   filters.push(
@@ -260,6 +271,7 @@ export async function findMoments(
   const conditions: SQL[] = [
     sql`m.status = 'ready'`,
     sql`m.visibility = 'public'`,
+    sql`m.hidden_at IS NULL`,
     sql`m.event_date IS NOT NULL`,
   ];
   if (where) conditions.push(sql`rt.slug = ${where}`);
@@ -298,6 +310,7 @@ export async function findMoments(
           INNER JOIN tags rt2        ON rt2.id = rmt2.tag_id AND rt2.facet = 'where'
         WHERE m2.status = 'ready'
           AND m2.visibility = 'public'
+          AND m2.hidden_at IS NULL
           AND rt2.slug = rt.slug
           AND m2.event_date = m.event_date
       ) AS performers
@@ -327,14 +340,25 @@ export async function findMoments(
 export async function getMediaById(
   id: string,
   viewerId?: string,
+  viewerIsAdmin = false,
 ): Promise<MediaWithTags | null> {
   const rows = await db.select().from(media).where(eq(media.id, id)).limit(1);
   const row = rows[0];
   if (!row) return null;
 
+  const isOwner = row.ownerId === viewerId;
+
   // Unlisted is link-shareable by design, so only `processing`/`failed` items
   // are owner-gated here.
-  if (row.status !== "ready" && row.ownerId !== viewerId) return null;
+  if (row.status !== "ready" && !isOwner) return null;
+
+  /**
+   * Hidden media 404s for the public, but stays reachable for its owner and for
+   * moderators. The owner needs somewhere to find out it was hidden and why —
+   * removing something silently and leaving no trace is how people conclude the
+   * site is broken rather than that they broke a rule.
+   */
+  if (row.hiddenAt && !isOwner && !viewerIsAdmin) return null;
 
   const withTags = await attachTags(await attachOwners([row]));
   return withTags[0] ?? null;
@@ -357,6 +381,7 @@ export async function getMediaByIds(
       and(
         inArray(media.id, ids),
         eq(media.status, "ready"),
+        sql`${media.hiddenAt} IS NULL`,
         viewerId
           ? sql`(${media.visibility} = 'public' OR ${media.ownerId} = ${viewerId})`
           : sql`${media.visibility} = 'public'`,
@@ -390,7 +415,14 @@ export async function findMediaByOwner(
   const rows = await db
     .select()
     .from(media)
-    .where(and(eq(media.ownerId, ownerId), eq(media.status, "ready"), visibility))
+    .where(
+      and(
+        eq(media.ownerId, ownerId),
+        eq(media.status, "ready"),
+        sql`${media.hiddenAt} IS NULL`,
+        visibility,
+      ),
+    )
     .orderBy(desc(media.createdAt))
     .limit(120);
 
@@ -420,6 +452,7 @@ export async function getFacetOptions(): Promise<{
       and(
         eq(media.status, "ready"),
         eq(media.visibility, "public"),
+        sql`${media.hiddenAt} IS NULL`,
         sql`${media.eventDate} IS NOT NULL`,
       ),
     )

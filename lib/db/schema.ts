@@ -44,6 +44,13 @@ export const users = pgTable(
     passwordHash: text("password_hash").notNull(),
     displayName: text("display_name").notNull(),
     avatarKey: text("avatar_key"),
+    /**
+     * Suspension blocks login and hides everything the account posted, without
+     * destroying any of it. Reversible on purpose — an account is a person, and
+     * getting it wrong should cost an apology rather than their whole archive.
+     */
+    suspendedAt: timestamp("suspended_at", { withTimezone: true }),
+    suspendedReason: text("suspended_reason"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -125,6 +132,20 @@ export const media = pgTable(
     status: text("status", { enum: MEDIA_STATUSES })
       .notNull()
       .default("processing"),
+
+    /**
+     * Moderation hide, kept separate from `status` (which is about processing)
+     * and from deletion (which is irreversible).
+     *
+     * This distinction is the most useful thing in the moderation toolkit. Faced
+     * with something borderline, a moderator whose only option is permanent
+     * deletion will either destroy something they were unsure about or leave it
+     * up while they think. Hide removes it from every listing instantly, keeps
+     * the bytes, and can be undone.
+     */
+    hiddenAt: timestamp("hidden_at", { withTimezone: true }),
+    hiddenBy: text("hidden_by"),
+    hiddenReason: text("hidden_reason"),
 
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
@@ -274,7 +295,63 @@ export const momentFollows = pgTable(
   ],
 );
 
+export const REPORT_REASONS = [
+  "copyright",
+  "abuse",
+  "sexual",
+  "spam",
+  "wrong-tags",
+  "other",
+] as const;
+export type ReportReason = (typeof REPORT_REASONS)[number];
+
+export const REPORT_STATUSES = ["open", "actioned", "dismissed"] as const;
+export type ReportStatus = (typeof REPORT_STATUSES)[number];
+
+/**
+ * A report points at exactly one of: an upload, a comment, or a moment.
+ *
+ * Moments are included because they're shared space nobody owns — anyone can
+ * add to CBGB on 12 June 1975, so there's no uploader whose judgement covers
+ * the page as a whole. "wrong-tags" exists as a reason for the same reason:
+ * a mistagged upload quietly pollutes someone else's pool, which is a
+ * data-quality problem here rather than an abuse one, but it still needs
+ * reporting.
+ */
+export const reports = pgTable(
+  "reports",
+  {
+    id: text("id").primaryKey(),
+    reporterId: text("reporter_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    reason: text("reason", { enum: REPORT_REASONS }).notNull(),
+    note: text("note"),
+    status: text("status", { enum: REPORT_STATUSES }).notNull().default("open"),
+
+    mediaId: text("media_id").references(() => media.id, {
+      onDelete: "cascade",
+    }),
+    commentId: text("comment_id").references(() => comments.id, {
+      onDelete: "cascade",
+    }),
+    momentWhere: text("moment_where"),
+    momentDate: date("moment_date", { mode: "string" }),
+
+    resolvedAt: timestamp("resolved_at", { withTimezone: true }),
+    resolvedBy: text("resolved_by"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    index("reports_status_idx").on(t.status, t.createdAt),
+    index("reports_media_idx").on(t.mediaId),
+  ],
+);
+
 export type User = typeof users.$inferSelect;
 export type Media = typeof media.$inferSelect;
 export type Tag = typeof tags.$inferSelect;
 export type Comment = typeof comments.$inferSelect;
+export type Report = typeof reports.$inferSelect;

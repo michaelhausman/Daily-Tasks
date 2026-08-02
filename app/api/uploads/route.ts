@@ -35,6 +35,14 @@ export async function POST(request: NextRequest) {
     return Response.json({ error: "You must be logged in to upload." }, { status: 401 });
   }
 
+  // Suspension takes effect on an existing session too, not just at next login.
+  if (user.suspendedAt) {
+    return Response.json(
+      { error: "This account is suspended and cannot upload." },
+      { status: 403 },
+    );
+  }
+
   // Checked before reading the body, so a rate-limited client isn't made to
   // stream a whole video up first only to be rejected.
   const since = new Date(Date.now() - 60 * 60 * 1000);

@@ -322,6 +322,7 @@ export async function mediaFromFollowedTags(
         eq(tagFollows.userId, userId),
         eq(media.status, "ready"),
         eq(media.visibility, "public"),
+        sql`${media.hiddenAt} IS NULL`,
       ),
     )
     .orderBy(desc(media.createdAt))

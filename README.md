@@ -147,13 +147,41 @@ lib/
   storage/             pluggable object storage
 ```
 
+## Moderation
+
+Set `ADMIN_HANDLES` and those accounts get `/admin`: a queue of open reports,
+recent uploads, recent comments, and everyone with an account. The nav shows an
+open-report count, because a queue you have to remember to visit is a queue
+nobody visits. Non-admins get a 404 rather than a 403 — an admin page that
+announces itself is an invitation.
+
+**Hide is separate from delete, and that's the important part.** Faced with
+something borderline, a moderator whose only option is permanent deletion will
+either destroy something they were unsure about or leave it up while they think.
+Hiding removes an item from every listing instantly, keeps the file, and can be
+undone. Its owner still sees it, with the reason.
+
+Suspending an account blocks login and hides everything it posted, without
+deleting anything — reinstating restores the lot. Uploads hidden on their own
+merits keep their own reason, so reinstating doesn't resurrect them.
+
+Tags get rename, merge, and delete, because a bad tag does more damage than a
+bad photo: it pollutes browse for everyone and survives deleting every upload
+that used it.
+
+House rules live at `/rules` and takedown requests at `/takedown`. Both are
+drafts written in plain English, not reviewed legal terms — see the note at the
+top of each.
+
 ## Known limits
 
 Deliberately out of scope for this first version:
 
-- **No moderation tooling** — no reporting, no takedown queue, no admin view.
-  This is the one to fix before the site is open to the public
-- **No rate limiting** on uploads
+- **No automated scanning.** No CSAM hashing, no NSFW classifier. Disproportionate
+  while signups are invite-gated; genuinely needed before opening them
+- **No audit log.** Moderation actions aren't recorded beyond the current state
+- **No appeals process** beyond getting in touch
+- **No rate limiting** on comments or likes — only on uploads
 - **Processing is inline** with the upload request; it belongs in a job queue
   before real traffic, and it rules out serverless hosts with request timeouts
 - **No video transcoding** — originals are served as uploaded, so a phone's

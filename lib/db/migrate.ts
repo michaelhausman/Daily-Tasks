@@ -112,6 +112,33 @@ const STATEMENTS = [
     PRIMARY KEY (user_id, where_slug, event_date)
   )`,
   `CREATE INDEX IF NOT EXISTS moment_follows_key_idx ON moment_follows (where_slug, event_date)`,
+
+  // Moderation columns are added rather than baked into CREATE TABLE so an
+  // existing deployment picks them up on the next boot.
+  `ALTER TABLE users ADD COLUMN IF NOT EXISTS suspended_at TIMESTAMPTZ`,
+  `ALTER TABLE users ADD COLUMN IF NOT EXISTS suspended_reason TEXT`,
+  `ALTER TABLE media ADD COLUMN IF NOT EXISTS hidden_at TIMESTAMPTZ`,
+  `ALTER TABLE media ADD COLUMN IF NOT EXISTS hidden_by TEXT`,
+  `ALTER TABLE media ADD COLUMN IF NOT EXISTS hidden_reason TEXT`,
+  // Every public listing filters on this, so it wants an index.
+  `CREATE INDEX IF NOT EXISTS media_hidden_idx ON media (hidden_at)`,
+
+  `CREATE TABLE IF NOT EXISTS reports (
+    id TEXT PRIMARY KEY,
+    reporter_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    reason TEXT NOT NULL,
+    note TEXT,
+    status TEXT NOT NULL DEFAULT 'open',
+    media_id TEXT REFERENCES media(id) ON DELETE CASCADE,
+    comment_id TEXT REFERENCES comments(id) ON DELETE CASCADE,
+    moment_where TEXT,
+    moment_date DATE,
+    resolved_at TIMESTAMPTZ,
+    resolved_by TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+  )`,
+  `CREATE INDEX IF NOT EXISTS reports_status_idx ON reports (status, created_at)`,
+  `CREATE INDEX IF NOT EXISTS reports_media_idx ON reports (media_id)`,
 ];
 
 /**
@@ -132,6 +159,24 @@ const CONSTRAINTS: Array<[table: string, name: string, check: string]> = [
      OR (media_id IS NULL AND moment_where IS NOT NULL AND moment_date IS NOT NULL)`,
   ],
   ["comments", "comments_body_check", `length(btrim(body)) > 0`],
+  [
+    "reports",
+    "reports_reason_check",
+    `reason IN ('copyright','abuse','sexual','spam','wrong-tags','other')`,
+  ],
+  [
+    "reports",
+    "reports_status_check",
+    `status IN ('open','actioned','dismissed')`,
+  ],
+  // Exactly one target, same shape as the comments constraint.
+  [
+    "reports",
+    "reports_one_target_check",
+    `(media_id IS NOT NULL)::int
+     + (comment_id IS NOT NULL)::int
+     + (moment_where IS NOT NULL AND moment_date IS NOT NULL)::int = 1`,
+  ],
 ];
 
 export async function runMigrations() {

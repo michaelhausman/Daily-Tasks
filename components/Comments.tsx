@@ -3,6 +3,7 @@
 import { useActionState, useRef } from "react";
 import { useFormStatus } from "react-dom";
 
+import { ReportButton } from "@/components/ReportButton";
 import {
   addCommentAction,
   deleteCommentAction,
@@ -114,6 +115,15 @@ export function Comments({
                 )}
               </div>
               <p className="whitespace-pre-wrap text-sm">{c.body}</p>
+              {c.author.id !== viewerId && (
+                <div className="mt-1.5">
+                  <ReportButton
+                    commentId={c.id}
+                    loggedIn={loggedIn}
+                    compact
+                  />
+                </div>
+              )}
             </li>
           ))}
         </ul>
