@@ -18,9 +18,11 @@ function SubmitButton({ label }: { label: string }) {
 export function AuthForm({
   mode,
   action,
+  inviteRequired = false,
 }: {
   mode: "login" | "signup";
   action: (prev: AuthState, formData: FormData) => Promise<AuthState>;
+  inviteRequired?: boolean;
 }) {
   const [state, formAction] = useActionState<AuthState, FormData>(action, {});
   const isSignup = mode === "signup";
@@ -39,6 +41,24 @@ export function AuthForm({
       <form action={formAction} className="space-y-4">
         {isSignup ? (
           <>
+            {inviteRequired && (
+              <div>
+                <label className="mb-1.5 block text-sm font-medium">
+                  Invite code
+                </label>
+                <input
+                  name="inviteCode"
+                  required
+                  autoComplete="off"
+                  placeholder="From whoever invited you"
+                  className="input"
+                />
+                <p className="mt-1 text-xs muted">
+                  This instance is invite-only while it&rsquo;s being tested.
+                  Browsing is open to everyone.
+                </p>
+              </div>
+            )}
             <div>
               <label className="mb-1.5 block text-sm font-medium">Handle</label>
               <input

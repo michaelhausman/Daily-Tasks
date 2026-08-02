@@ -1,8 +1,13 @@
 import path from "node:path";
-import { eq } from "drizzle-orm";
+import { and, eq, gte, sql } from "drizzle-orm";
 import type { NextRequest } from "next/server";
 
 import { getCurrentUser } from "@/lib/auth/session";
+import {
+  MAX_UPLOAD_BYTES,
+  MAX_UPLOAD_MB,
+  UPLOADS_PER_HOUR,
+} from "@/lib/config";
 import { newId } from "@/lib/ids";
 import { db } from "@/lib/db";
 import { media, mediaTags, type Facet, type Visibility } from "@/lib/db/schema";
@@ -10,8 +15,6 @@ import { kindFromMime, processMedia } from "@/lib/media/process";
 import { storage } from "@/lib/storage";
 import { isValidEventDate } from "@/lib/tags/normalize";
 import { bumpUsage, resolveTags, type TagInput } from "@/lib/tags/service";
-
-const MAX_BYTES = 512 * 1024 * 1024;
 
 const ALLOWED_MIME = /^(image\/(jpeg|png|webp|gif|avif|heic|heif)|video\/(mp4|webm|quicktime|x-m4v)|audio\/(mpeg|mp4|wav|x-wav|ogg|opus|flac|aac|x-m4a))$/;
 
@@ -32,6 +35,23 @@ export async function POST(request: NextRequest) {
     return Response.json({ error: "You must be logged in to upload." }, { status: 401 });
   }
 
+  // Checked before reading the body, so a rate-limited client isn't made to
+  // stream a whole video up first only to be rejected.
+  const since = new Date(Date.now() - 60 * 60 * 1000);
+  const recent = await db
+    .select({ n: sql<string>`count(*)` })
+    .from(media)
+    .where(and(eq(media.ownerId, user.id), gte(media.createdAt, since)));
+
+  if (Number(recent[0]?.n ?? 0) >= UPLOADS_PER_HOUR) {
+    return Response.json(
+      {
+        error: `You've hit the limit of ${UPLOADS_PER_HOUR} uploads per hour. Try again shortly.`,
+      },
+      { status: 429 },
+    );
+  }
+
   let form: FormData;
   try {
     form = await request.formData();
@@ -46,9 +66,13 @@ export async function POST(request: NextRequest) {
   if (file.size === 0) {
     return Response.json({ error: "File is empty." }, { status: 400 });
   }
-  if (file.size > MAX_BYTES) {
+  if (file.size > MAX_UPLOAD_BYTES) {
     return Response.json(
-      { error: `File exceeds the ${Math.round(MAX_BYTES / 1024 / 1024)}MB limit.` },
+      {
+        error: `That file is ${(file.size / 1024 / 1024).toFixed(
+          0,
+        )}MB — the limit is ${MAX_UPLOAD_MB}MB.`,
+      },
       { status: 413 },
     );
   }

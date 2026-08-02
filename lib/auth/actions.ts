@@ -3,6 +3,7 @@
 import { eq, or } from "drizzle-orm";
 import { redirect } from "next/navigation";
 
+import { SIGNUP_INVITE_CODE, SIGNUP_OPEN } from "@/lib/config";
 import { db } from "@/lib/db";
 import { users } from "@/lib/db/schema";
 import { newId } from "@/lib/ids";
@@ -27,6 +28,19 @@ export async function signUp(
   const password = String(formData.get("password") ?? "");
   const displayName =
     String(formData.get("displayName") ?? "").trim() || handle;
+
+  if (!SIGNUP_OPEN) {
+    return { error: "Signups are closed right now." };
+  }
+
+  // Checked before anything else so a wrong code costs nothing and reveals
+  // nothing about which handles or emails exist.
+  if (SIGNUP_INVITE_CODE) {
+    const supplied = String(formData.get("inviteCode") ?? "").trim();
+    if (supplied !== SIGNUP_INVITE_CODE) {
+      return { error: "That invite code isn't right." };
+    }
+  }
 
   if (!HANDLE_RE.test(handle)) {
     return {

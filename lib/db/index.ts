@@ -62,6 +62,7 @@ function createClient() {
 
   // PGlite creates its own data directory but not the parents above it.
   fs.mkdirSync(path.dirname(PGLITE_DIR), { recursive: true });
+  warnIfPgliteAlreadyOpen();
   return drizzlePglite(new PGlite(PGLITE_DIR), { schema });
 }
 
@@ -75,6 +76,51 @@ export const db = globalForDb.__tagpoolDb ?? createClient();
 
 if (process.env.NODE_ENV !== "production") {
   globalForDb.__tagpoolDb = db;
+}
+
+/**
+ * PGlite is an in-process database: each process that opens the directory gets
+ * its own independent copy, and they overwrite each other on flush. So running
+ * `npm run seed` while `npm run dev` is up doesn't share data — it silently
+ * loses it, which is a miserable thing to debug.
+ *
+ * A real Postgres server has no such limitation, so this only applies locally.
+ * It warns rather than throws: a stale lock from a crashed process should never
+ * be the reason someone can't start their app.
+ */
+function warnIfPgliteAlreadyOpen(): void {
+  const lockPath = path.join(path.dirname(PGLITE_DIR), "pglite.lock");
+
+  try {
+    const existing = Number(fs.readFileSync(lockPath, "utf8").trim());
+    if (existing && existing !== process.pid) {
+      let alive = false;
+      try {
+        // Signal 0 tests for existence without actually signalling.
+        process.kill(existing, 0);
+        alive = true;
+      } catch {
+        alive = false; // stale lock from a process that already exited
+      }
+
+      if (alive) {
+        console.warn(
+          `\n[tagpool] WARNING: another process (pid ${existing}) already has the local database open.` +
+            `\n          PGlite is single-process — both copies will overwrite each other.` +
+            `\n          Stop the dev server before running scripts, or set DATABASE_URL` +
+            `\n          to a real Postgres server to work on both at once.\n`,
+        );
+      }
+    }
+  } catch {
+    // No lock file yet, or it's unreadable. Either way, carry on.
+  }
+
+  try {
+    fs.writeFileSync(lockPath, String(process.pid));
+  } catch {
+    // A read-only filesystem shouldn't stop the app from running.
+  }
 }
 
 export function describeDatabase(): string {

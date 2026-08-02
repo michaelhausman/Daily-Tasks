@@ -6,7 +6,9 @@ import { Chip } from "@/components/Chip";
 import { MediaGrid } from "@/components/MediaCard";
 import { momentHref } from "@/components/MomentCard";
 import { getCurrentUser } from "@/lib/auth/session";
+import { canDelete } from "@/lib/media/delete";
 import { findMedia, getMediaById } from "@/lib/media/queries";
+import { DeleteButton } from "./DeleteButton";
 import { storage } from "@/lib/storage";
 import { formatEventDate } from "@/lib/tags/normalize";
 
@@ -142,6 +144,15 @@ export default async function MediaPage({
           <Link href={moment} className="btn btn-ghost">
             See everyone&apos;s uploads from this moment →
           </Link>
+        )}
+
+        {canDelete(user, item.ownerId) && (
+          <div
+            className="border-t pt-4"
+            style={{ borderColor: "var(--border)" }}
+          >
+            <DeleteButton mediaId={item.id} isOwn={user?.id === item.ownerId} />
+          </div>
         )}
       </div>
 
