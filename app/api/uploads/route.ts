@@ -97,7 +97,7 @@ export async function POST(request: NextRequest) {
   const storageKey = `media/${id}/original${ext}`;
 
   const buffer = Buffer.from(await file.arrayBuffer());
-  await storage.put(storageKey, buffer);
+  await storage.put(storageKey, buffer, file.type);
 
   await db.insert(media).values({
     id,

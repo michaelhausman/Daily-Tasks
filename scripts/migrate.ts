@@ -1,5 +1,12 @@
-import { DB_PATH } from "../lib/db";
+import { describeDatabase } from "../lib/db";
 import { runMigrations } from "../lib/db/migrate";
 
-runMigrations();
-console.log(`Schema is up to date at ${DB_PATH}`);
+runMigrations()
+  .then(() => {
+    console.log(`Schema is up to date — ${describeDatabase()}`);
+    process.exit(0);
+  })
+  .catch((error) => {
+    console.error("Migration failed:", error);
+    process.exit(1);
+  });

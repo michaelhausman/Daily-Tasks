@@ -4,8 +4,8 @@ import { db } from "./index";
 
 /**
  * Schema is small and stable enough that hand-written idempotent DDL beats
- * wiring up drizzle-kit codegen. Every statement is CREATE ... IF NOT EXISTS,
- * so running this repeatedly is safe.
+ * wiring up drizzle-kit codegen and a migration folder. Every statement is
+ * guarded, so running this repeatedly — including on every boot — is safe.
  */
 const STATEMENTS = [
   `CREATE TABLE IF NOT EXISTS users (
@@ -15,7 +15,7 @@ const STATEMENTS = [
     password_hash TEXT NOT NULL,
     display_name TEXT NOT NULL,
     avatar_key TEXT,
-    created_at INTEGER NOT NULL DEFAULT (unixepoch() * 1000)
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
   )`,
   `CREATE UNIQUE INDEX IF NOT EXISTS users_handle_unique ON users (handle)`,
   `CREATE UNIQUE INDEX IF NOT EXISTS users_email_unique ON users (email)`,
@@ -23,8 +23,8 @@ const STATEMENTS = [
   `CREATE TABLE IF NOT EXISTS sessions (
     id TEXT PRIMARY KEY,
     user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    expires_at INTEGER NOT NULL,
-    created_at INTEGER NOT NULL DEFAULT (unixepoch() * 1000)
+    expires_at TIMESTAMPTZ NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
   )`,
   `CREATE INDEX IF NOT EXISTS sessions_user_idx ON sessions (user_id)`,
 
@@ -44,13 +44,13 @@ const STATEMENTS = [
     height INTEGER,
     duration_ms INTEGER,
     caption TEXT,
-    event_date TEXT,
-    captured_at INTEGER,
-    lat REAL,
-    lng REAL,
+    event_date DATE,
+    captured_at TIMESTAMPTZ,
+    lat DOUBLE PRECISION,
+    lng DOUBLE PRECISION,
     visibility TEXT NOT NULL DEFAULT 'public',
     status TEXT NOT NULL DEFAULT 'processing',
-    created_at INTEGER NOT NULL DEFAULT (unixepoch() * 1000)
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
   )`,
   `CREATE INDEX IF NOT EXISTS media_event_date_idx ON media (event_date)`,
   `CREATE INDEX IF NOT EXISTS media_owner_idx ON media (owner_id)`,
@@ -64,7 +64,7 @@ const STATEMENTS = [
     label TEXT NOT NULL,
     canonical_tag_id TEXT,
     usage_count INTEGER NOT NULL DEFAULT 0,
-    created_at INTEGER NOT NULL DEFAULT (unixepoch() * 1000)
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
   )`,
   `CREATE UNIQUE INDEX IF NOT EXISTS tags_facet_slug_unique ON tags (facet, slug)`,
   `CREATE INDEX IF NOT EXISTS tags_usage_idx ON tags (facet, usage_count)`,
@@ -77,8 +77,41 @@ const STATEMENTS = [
   `CREATE INDEX IF NOT EXISTS media_tags_tag_idx ON media_tags (tag_id)`,
 ];
 
-export function runMigrations() {
+/**
+ * The enum-like columns are plain TEXT (see schema.ts for why), so integrity
+ * comes from CHECK constraints. Postgres has no `ADD CONSTRAINT IF NOT EXISTS`,
+ * so each is wrapped in a DO block that swallows the duplicate-object error.
+ */
+const CONSTRAINTS: Array<[table: string, name: string, check: string]> = [
+  ["media", "media_kind_check", `kind IN ('photo','video','audio')`],
+  ["media", "media_visibility_check", `visibility IN ('public','unlisted')`],
+  ["media", "media_status_check", `status IN ('processing','ready','failed')`],
+  ["tags", "tags_facet_check", `facet IN ('who','where','topic')`],
+];
+
+export async function runMigrations() {
   for (const statement of STATEMENTS) {
-    db.run(sql.raw(statement));
+    await db.execute(sql.raw(statement));
   }
+
+  for (const [table, name, check] of CONSTRAINTS) {
+    await db.execute(
+      sql.raw(`DO $$ BEGIN
+        ALTER TABLE ${table} ADD CONSTRAINT ${name} CHECK (${check});
+      EXCEPTION
+        WHEN duplicate_object THEN NULL;
+      END $$;`),
+    );
+  }
+
+  // Self-referential FK is added after the table exists so the two orderings
+  // (fresh create vs. existing database) both work.
+  await db.execute(
+    sql.raw(`DO $$ BEGIN
+      ALTER TABLE tags ADD CONSTRAINT tags_canonical_fk
+        FOREIGN KEY (canonical_tag_id) REFERENCES tags(id) ON DELETE SET NULL;
+    EXCEPTION
+      WHEN duplicate_object THEN NULL;
+    END $$;`),
+  );
 }

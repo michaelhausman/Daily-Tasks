@@ -76,12 +76,31 @@ and it falls out of one rule in `facetCondition()`.
 
 - **Next.js 16** (App Router) — SSR pages plus the JSON API a native client
   would consume
-- **SQLite + Drizzle** — behind an adapter; the Postgres move is a driver swap
-- **Local disk storage** — behind [`StorageDriver`](lib/storage/index.ts), with
-  an `S3Driver` stub against the same interface
+- **Postgres + Drizzle** — one dialect everywhere; see below
+- **S3-compatible object storage** — behind [`StorageDriver`](lib/storage/index.ts),
+  with a local-disk driver for development
 - **scrypt + DB-backed sessions** — no external auth provider, nothing to sign
   up for
 - **sharp** for image derivatives and EXIF; **ffmpeg optional**
+
+### One database dialect, two engines
+
+Production points `DATABASE_URL` at a real Postgres server. Local development
+with nothing configured runs **PGlite** — actual Postgres compiled to
+WebAssembly, in-process, stored in `.data/pg`. Not an emulation: `string_agg`,
+`ARRAY_AGG ... FILTER`, and the moment aggregation all behave identically.
+
+The usual arrangement — SQLite locally, Postgres in production — means every
+raw query exists twice and the two drift until something breaks only in
+production. This way there's one schema and one set of SQL, and `npm run dev`
+still needs no database install, no Docker, and no signup.
+
+Storage works the same way: local disk by default, any S3-compatible bucket when
+`STORAGE_DRIVER=s3`. Both are chosen in [`lib/db/index.ts`](lib/db/index.ts) and
+[`lib/storage/index.ts`](lib/storage/index.ts); nothing above those files knows
+which engine it's talking to.
+
+**To deploy this for real, see [DEPLOY.md](DEPLOY.md).**
 
 ### ffmpeg is optional
 
@@ -112,12 +131,13 @@ lib/
 
 Deliberately out of scope for this first version:
 
+- **No moderation tooling** — no reporting, no takedown queue, no admin view.
+  This is the one to fix before the site is open to the public
+- **No rate limiting** on uploads
+- **Processing is inline** with the upload request; it belongs in a job queue
+  before real traffic, and it rules out serverless hosts with request timeouts
 - **No video transcoding** — originals are served as uploaded, so a phone's
   HEVC `.mov` may not play in every browser
-- **Processing is inline** with the upload request; it belongs in a job queue
-  before real traffic
-- **No moderation tooling** — no reporting, no takedown queue. Needed before
-  this is open to the public
 - No follows, likes, or comments; no email verification or password reset
 - Tag merging has schema support (`tags.canonical_tag_id`, followed on write)
   but no admin UI yet

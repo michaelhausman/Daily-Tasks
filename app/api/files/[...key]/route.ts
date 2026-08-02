@@ -2,33 +2,7 @@ import { Readable } from "node:stream";
 import type { NextRequest } from "next/server";
 
 import { isSafeKey, storage } from "@/lib/storage";
-
-const MIME_BY_EXT: Record<string, string> = {
-  ".webp": "image/webp",
-  ".jpg": "image/jpeg",
-  ".jpeg": "image/jpeg",
-  ".png": "image/png",
-  ".gif": "image/gif",
-  ".avif": "image/avif",
-  ".heic": "image/heic",
-  ".mp4": "video/mp4",
-  ".webm": "video/webm",
-  ".mov": "video/quicktime",
-  ".m4v": "video/x-m4v",
-  ".mp3": "audio/mpeg",
-  ".m4a": "audio/mp4",
-  ".wav": "audio/wav",
-  ".ogg": "audio/ogg",
-  ".oga": "audio/ogg",
-  ".opus": "audio/opus",
-  ".flac": "audio/flac",
-};
-
-function contentType(key: string): string {
-  const dot = key.lastIndexOf(".");
-  if (dot === -1) return "application/octet-stream";
-  return MIME_BY_EXT[key.slice(dot).toLowerCase()] ?? "application/octet-stream";
-}
+import { contentTypeForKey } from "@/lib/storage/mime";
 
 export async function GET(
   request: NextRequest,
@@ -46,7 +20,7 @@ export async function GET(
     return new Response("Not found", { status: 404 });
   }
 
-  const type = contentType(key);
+  const type = contentTypeForKey(key);
   const baseHeaders: Record<string, string> = {
     "Content-Type": type,
     // Keys are content-addressed by media id and never rewritten in place, so
@@ -81,7 +55,7 @@ export async function GET(
         start < info.bytes
       ) {
         end = Math.min(end, info.bytes - 1);
-        const stream = storage.createReadStream(key, { start, end });
+        const stream = await storage.createReadStream(key, { start, end });
         return new Response(Readable.toWeb(stream) as ReadableStream, {
           status: 206,
           headers: {
@@ -99,7 +73,7 @@ export async function GET(
     }
   }
 
-  const stream = storage.createReadStream(key);
+  const stream = await storage.createReadStream(key);
   return new Response(Readable.toWeb(stream) as ReadableStream, {
     status: 200,
     headers: { ...baseHeaders, "Content-Length": String(info.bytes) },

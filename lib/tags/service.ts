@@ -77,7 +77,9 @@ export async function bumpUsage(tagIds: string[], delta = 1): Promise<void> {
   if (tagIds.length === 0) return;
   await db
     .update(tags)
-    .set({ usageCount: sql`max(0, ${tags.usageCount} + ${delta})` })
+    // GREATEST, not max() — in Postgres max() is an aggregate, and the
+    // two-argument scalar form only exists in SQLite.
+    .set({ usageCount: sql`GREATEST(0, ${tags.usageCount} + ${delta})` })
     .where(inArray(tags.id, tagIds));
 }
 

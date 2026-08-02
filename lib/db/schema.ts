@@ -1,13 +1,14 @@
-import { sql } from "drizzle-orm";
 import {
+  date,
+  doublePrecision,
   index,
   integer,
+  pgTable,
   primaryKey,
-  real,
-  sqliteTable,
   text,
+  timestamp,
   uniqueIndex,
-} from "drizzle-orm/sqlite-core";
+} from "drizzle-orm/pg-core";
 
 /**
  * Facets are what make grouping work. A freeform tag cloud fragments the moment
@@ -28,7 +29,13 @@ export type Visibility = (typeof VISIBILITIES)[number];
 export const MEDIA_STATUSES = ["processing", "ready", "failed"] as const;
 export type MediaStatus = (typeof MEDIA_STATUSES)[number];
 
-export const users = sqliteTable(
+/**
+ * Enum-like columns are plain `text` with a CHECK constraint (added in
+ * migrate.ts) rather than native Postgres enum types. Postgres enums are
+ * painful to alter later — adding a media kind shouldn't require a type
+ * migration — and the CHECK gives the same integrity guarantee.
+ */
+export const users = pgTable(
   "users",
   {
     id: text("id").primaryKey(),
@@ -37,9 +44,9 @@ export const users = sqliteTable(
     passwordHash: text("password_hash").notNull(),
     displayName: text("display_name").notNull(),
     avatarKey: text("avatar_key"),
-    createdAt: integer("created_at", { mode: "timestamp_ms" })
+    createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
-      .default(sql`(unixepoch() * 1000)`),
+      .defaultNow(),
   },
   (t) => [
     uniqueIndex("users_handle_unique").on(t.handle),
@@ -47,22 +54,22 @@ export const users = sqliteTable(
   ],
 );
 
-export const sessions = sqliteTable(
+export const sessions = pgTable(
   "sessions",
   {
     id: text("id").primaryKey(),
     userId: text("user_id")
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
-    expiresAt: integer("expires_at", { mode: "timestamp_ms" }).notNull(),
-    createdAt: integer("created_at", { mode: "timestamp_ms" })
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
-      .default(sql`(unixepoch() * 1000)`),
+      .defaultNow(),
   },
   (t) => [index("sessions_user_idx").on(t.userId)],
 );
 
-export const media = sqliteTable(
+export const media = pgTable(
   "media",
   {
     id: text("id").primaryKey(),
@@ -90,22 +97,27 @@ export const media = sqliteTable(
     caption: text("caption"),
 
     /**
-     * The WHEN facet, stored as a real ISO `YYYY-MM-DD` date rather than a tag row.
+     * The WHEN facet, as a real DATE rather than a tag row.
      *
      * This is the single most important modelling decision in the schema. As a
-     * tag, "July 24th" / "7/24" / "24 July 2026" / "2026-07-24" are four distinct
-     * rows and the pool silently splits four ways. As a column it is one value,
-     * it sorts, and it supports range queries ("that whole festival weekend")
-     * that a tag never could. The UI still renders it as a chip alongside the
-     * who/where tags, so to the user all three facets look and behave alike.
+     * tag, "July 24th" / "7/24" / "24 July 2026" / "2026-07-24" are four
+     * distinct rows and the pool silently splits four ways. As a column it is
+     * one value, it sorts, and it supports range queries ("that whole festival
+     * weekend") that a tag never could. The UI still renders it as a chip
+     * alongside the who/where tags, so all three facets look alike to the user.
+     *
+     * `mode: "string"` keeps this as a plain `YYYY-MM-DD` string end to end,
+     * which is what the URLs, chips, and validators all speak — and sidesteps
+     * the timezone bugs a Date round-trip would introduce for a value that has
+     * no time and no zone.
      */
-    eventDate: text("event_date"),
+    eventDate: date("event_date", { mode: "string" }),
 
     // What the file itself claimed, via EXIF. Used to prefill eventDate at
     // upload time; kept separately because the uploader may correct it.
-    capturedAt: integer("captured_at", { mode: "timestamp_ms" }),
-    lat: real("lat"),
-    lng: real("lng"),
+    capturedAt: timestamp("captured_at", { withTimezone: true }),
+    lat: doublePrecision("lat"),
+    lng: doublePrecision("lng"),
 
     visibility: text("visibility", { enum: VISIBILITIES })
       .notNull()
@@ -114,9 +126,9 @@ export const media = sqliteTable(
       .notNull()
       .default("processing"),
 
-    createdAt: integer("created_at", { mode: "timestamp_ms" })
+    createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
-      .default(sql`(unixepoch() * 1000)`),
+      .defaultNow(),
   },
   (t) => [
     index("media_event_date_idx").on(t.eventDate),
@@ -126,7 +138,7 @@ export const media = sqliteTable(
   ],
 );
 
-export const tags = sqliteTable(
+export const tags = pgTable(
   "tags",
   {
     id: text("id").primaryKey(),
@@ -143,9 +155,9 @@ export const tags = sqliteTable(
      */
     canonicalTagId: text("canonical_tag_id"),
     usageCount: integer("usage_count").notNull().default(0),
-    createdAt: integer("created_at", { mode: "timestamp_ms" })
+    createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
-      .default(sql`(unixepoch() * 1000)`),
+      .defaultNow(),
   },
   (t) => [
     uniqueIndex("tags_facet_slug_unique").on(t.facet, t.slug),
@@ -153,7 +165,7 @@ export const tags = sqliteTable(
   ],
 );
 
-export const mediaTags = sqliteTable(
+export const mediaTags = pgTable(
   "media_tags",
   {
     mediaId: text("media_id")

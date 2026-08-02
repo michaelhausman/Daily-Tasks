@@ -11,6 +11,37 @@ import {
   type Tag,
 } from "@/lib/db/schema";
 
+/**
+ * `db.execute()` hands back a node-postgres QueryResult (`{ rows }`) under a
+ * real server and a plain array under PGlite. Normalizing here keeps callers
+ * from caring which engine they're on.
+ */
+function rowsOf<T>(result: unknown): T[] {
+  if (Array.isArray(result)) return result as T[];
+  const rows = (result as { rows?: unknown }).rows;
+  return Array.isArray(rows) ? (rows as T[]) : [];
+}
+
+/**
+ * Normalize a DATE column to `YYYY-MM-DD` regardless of driver parsing.
+ *
+ * The type parser in lib/db/index.ts means DATE arrives as a string, so the
+ * Date branch is a fallback. It reads *local* components deliberately: the only
+ * thing that produces a Date here is a driver parsing DATE as local midnight,
+ * and reading that back via UTC getters shifts the day backwards for every
+ * timezone east of UTC (Tokyo turns 2026-07-24 into 2026-07-23).
+ */
+function asDateString(value: string | Date): string {
+  if (value instanceof Date) {
+    return [
+      value.getFullYear(),
+      String(value.getMonth() + 1).padStart(2, "0"),
+      String(value.getDate()).padStart(2, "0"),
+    ].join("-");
+  }
+  return String(value).slice(0, 10);
+}
+
 export type MediaWithOwner = Media & {
   owner: { handle: string; displayName: string };
 };
@@ -159,11 +190,30 @@ export async function countMedia(
   viewerId?: string,
 ): Promise<number> {
   const rows = await db
-    .select({ n: sql<number>`count(*)` })
+    .select({ n: sql<string>`count(*)` })
     .from(media)
     .where(and(...buildFilters(sel, viewerId)));
-  return rows[0]?.n ?? 0;
+  // Postgres COUNT is bigint, which arrives as a string.
+  return Number(rows[0]?.n ?? 0);
 }
+
+/**
+ * Raw shape of a moment row. Types are widened where the two drivers disagree:
+ * bigint counts arrive as strings from node-postgres but numbers from PGlite,
+ * and timestamps as Date or ISO string depending on the parser.
+ */
+type MomentRow = {
+  who_slug: string;
+  who_label: string;
+  where_slug: string;
+  where_label: string;
+  event_date: string | Date;
+  media_count: string | number;
+  contributor_count: string | number;
+  last_upload: string | Date;
+  preview_keys: string[] | null;
+  kinds: string[] | null;
+};
 
 export type Moment = {
   who: { slug: string; label: string };
@@ -206,18 +256,7 @@ export async function findMoments(
   if (where) conditions.push(sql`rt.slug = ${where}`);
   if (eventDate) conditions.push(sql`m.event_date = ${eventDate}`);
 
-  const rows = await db.all<{
-    who_slug: string;
-    who_label: string;
-    where_slug: string;
-    where_label: string;
-    event_date: string;
-    media_count: number;
-    contributor_count: number;
-    last_upload: number;
-    preview_keys: string | null;
-    kinds: string | null;
-  }>(sql`
+  const result = await db.execute(sql`
     SELECT
       wt.slug  AS who_slug,
       wt.label AS who_label,
@@ -227,8 +266,11 @@ export async function findMoments(
       COUNT(DISTINCT m.id)       AS media_count,
       COUNT(DISTINCT m.owner_id) AS contributor_count,
       MAX(m.created_at)          AS last_upload,
-      GROUP_CONCAT(COALESCE(m.thumb_key, '')) AS preview_keys,
-      GROUP_CONCAT(DISTINCT m.kind)           AS kinds
+      -- Ordered so the previews on a moment card are the newest uploads
+      -- rather than whatever order the join happened to produce.
+      ARRAY_AGG(DISTINCT m.thumb_key) FILTER (WHERE m.thumb_key IS NOT NULL)
+        AS preview_keys,
+      ARRAY_AGG(DISTINCT m.kind) AS kinds
     FROM media m
       INNER JOIN media_tags wmt ON wmt.media_id = m.id
       INNER JOIN tags wt        ON wt.id = wmt.tag_id AND wt.facet = 'who'
@@ -237,22 +279,20 @@ export async function findMoments(
     WHERE ${sql.join(conditions, sql` AND `)}
     GROUP BY wt.slug, wt.label, rt.slug, rt.label, m.event_date
     HAVING COUNT(DISTINCT m.id) >= ${minMedia}
-    ORDER BY last_upload DESC
+    ORDER BY MAX(m.created_at) DESC
     LIMIT ${limit}
   `);
 
-  return rows.map((r) => ({
+  return rowsOf<MomentRow>(result).map((r) => ({
     who: { slug: r.who_slug, label: r.who_label },
     where: { slug: r.where_slug, label: r.where_label },
-    eventDate: r.event_date,
+    eventDate: asDateString(r.event_date),
+    // Postgres COUNT returns bigint, which the driver hands back as a string.
     mediaCount: Number(r.media_count),
     contributorCount: Number(r.contributor_count),
-    lastUpload: Number(r.last_upload),
-    previewKeys: (r.preview_keys ?? "")
-      .split(",")
-      .filter((k) => k.length > 0)
-      .slice(0, 4),
-    kinds: (r.kinds ?? "").split(",").filter(Boolean),
+    lastUpload: new Date(r.last_upload).getTime(),
+    previewKeys: (r.preview_keys ?? []).slice(0, 4),
+    kinds: r.kinds ?? [],
   }));
 }
 

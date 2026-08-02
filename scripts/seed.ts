@@ -165,7 +165,7 @@ function fakeWaveform(seed: number, n = 240): number[] {
 }
 
 async function main() {
-  runMigrations();
+  await runMigrations();
 
   const existing = await db.select({ id: users.id }).from(users).limit(1);
   if (existing.length > 0) {
