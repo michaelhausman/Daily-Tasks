@@ -203,8 +203,6 @@ export async function countMedia(
  * and timestamps as Date or ISO string depending on the parser.
  */
 type MomentRow = {
-  who_slug: string;
-  who_label: string;
   where_slug: string;
   where_label: string;
   event_date: string | Date;
@@ -213,10 +211,10 @@ type MomentRow = {
   last_upload: string | Date;
   preview_keys: string[] | null;
   kinds: string[] | null;
+  performers: string[] | null;
 };
 
 export type Moment = {
-  who: { slug: string; label: string };
   where: { slug: string; label: string };
   eventDate: string;
   mediaCount: number;
@@ -224,13 +222,22 @@ export type Moment = {
   lastUpload: number;
   previewKeys: string[];
   kinds: string[];
+  /** Who-tag labels present in this moment, for the "featuring" line. */
+  performers: string[];
 };
 
 /**
- * A Moment is not a row anybody creates. It is the observation that several
- * people independently tagged their uploads with the same performer, the same
- * place, and the same day — so those uploads are footage of one event and
- * belong on one page.
+ * A Moment is a place on a day: CBGB on 12 June 1970, the Eau Claire festival
+ * on 24 July 2026. Nobody creates one — it's the observation that people
+ * independently tagged uploads with the same venue and the same date, so those
+ * uploads are pictures of one occasion and belong on one page.
+ *
+ * The performer is deliberately *not* part of a moment's identity. It used to
+ * be, and that was wrong for two reasons: a photo of an empty CBGB storefront
+ * has no performer and would never have pooled with anything, and a festival
+ * day with forty bands was forty separate moments instead of one afternoon.
+ * Performers live inside a moment as chips you can filter by, which keeps the
+ * per-artist view a click away without fragmenting the place-and-day pool.
  *
  * Deriving it from a GROUP BY instead of storing it means a moment springs into
  * existence the instant the second person tags correctly, with no backfill and
@@ -239,52 +246,72 @@ export type Moment = {
 export async function findMoments(
   opts: {
     limit?: number;
-    who?: string;
     where?: string;
     eventDate?: string;
     minMedia?: number;
+    /** Restrict to these (whereSlug, date) pairs — used by the following feed. */
+    keys?: Array<{ whereSlug: string; eventDate: string }>;
   } = {},
 ): Promise<Moment[]> {
-  const { limit = 24, who, where, eventDate, minMedia = 1 } = opts;
+  const { limit = 24, where, eventDate, minMedia = 1, keys } = opts;
+
+  if (keys && keys.length === 0) return [];
 
   const conditions: SQL[] = [
     sql`m.status = 'ready'`,
     sql`m.visibility = 'public'`,
     sql`m.event_date IS NOT NULL`,
   ];
-  if (who) conditions.push(sql`wt.slug = ${who}`);
   if (where) conditions.push(sql`rt.slug = ${where}`);
   if (eventDate) conditions.push(sql`m.event_date = ${eventDate}`);
+  if (keys) {
+    conditions.push(
+      sql`(${sql.join(
+        keys.map(
+          (k) => sql`(rt.slug = ${k.whereSlug} AND m.event_date = ${k.eventDate})`,
+        ),
+        sql` OR `,
+      )})`,
+    );
+  }
 
   const result = await db.execute(sql`
     SELECT
-      wt.slug  AS who_slug,
-      wt.label AS who_label,
       rt.slug  AS where_slug,
       rt.label AS where_label,
       m.event_date AS event_date,
       COUNT(DISTINCT m.id)       AS media_count,
       COUNT(DISTINCT m.owner_id) AS contributor_count,
       MAX(m.created_at)          AS last_upload,
-      -- Ordered so the previews on a moment card are the newest uploads
-      -- rather than whatever order the join happened to produce.
       ARRAY_AGG(DISTINCT m.thumb_key) FILTER (WHERE m.thumb_key IS NOT NULL)
         AS preview_keys,
-      ARRAY_AGG(DISTINCT m.kind) AS kinds
+      ARRAY_AGG(DISTINCT m.kind) AS kinds,
+      -- Performers are a property of the moment's contents, not its identity,
+      -- so they're gathered with a correlated subquery rather than a join that
+      -- would multiply the grouped rows.
+      (
+        SELECT ARRAY_AGG(DISTINCT t2.label)
+        FROM media m2
+          INNER JOIN media_tags mt2 ON mt2.media_id = m2.id
+          INNER JOIN tags t2        ON t2.id = mt2.tag_id AND t2.facet = 'who'
+          INNER JOIN media_tags rmt2 ON rmt2.media_id = m2.id
+          INNER JOIN tags rt2        ON rt2.id = rmt2.tag_id AND rt2.facet = 'where'
+        WHERE m2.status = 'ready'
+          AND m2.visibility = 'public'
+          AND rt2.slug = rt.slug
+          AND m2.event_date = m.event_date
+      ) AS performers
     FROM media m
-      INNER JOIN media_tags wmt ON wmt.media_id = m.id
-      INNER JOIN tags wt        ON wt.id = wmt.tag_id AND wt.facet = 'who'
       INNER JOIN media_tags rmt ON rmt.media_id = m.id
       INNER JOIN tags rt        ON rt.id = rmt.tag_id AND rt.facet = 'where'
     WHERE ${sql.join(conditions, sql` AND `)}
-    GROUP BY wt.slug, wt.label, rt.slug, rt.label, m.event_date
+    GROUP BY rt.slug, rt.label, m.event_date
     HAVING COUNT(DISTINCT m.id) >= ${minMedia}
     ORDER BY MAX(m.created_at) DESC
     LIMIT ${limit}
   `);
 
   return rowsOf<MomentRow>(result).map((r) => ({
-    who: { slug: r.who_slug, label: r.who_label },
     where: { slug: r.where_slug, label: r.where_label },
     eventDate: asDateString(r.event_date),
     // Postgres COUNT returns bigint, which the driver hands back as a string.
@@ -293,6 +320,7 @@ export async function findMoments(
     lastUpload: new Date(r.last_upload).getTime(),
     previewKeys: (r.preview_keys ?? []).slice(0, 4),
     kinds: r.kinds ?? [],
+    performers: r.performers ?? [],
   }));
 }
 
@@ -310,6 +338,35 @@ export async function getMediaById(
 
   const withTags = await attachTags(await attachOwners([row]));
   return withTags[0] ?? null;
+}
+
+/**
+ * Hydrate a list of ids, preserving the order given. The following feed decides
+ * *which* media to show with its own query, then needs the full rows.
+ */
+export async function getMediaByIds(
+  ids: string[],
+  viewerId?: string,
+): Promise<MediaWithTags[]> {
+  if (ids.length === 0) return [];
+
+  const rows = await db
+    .select()
+    .from(media)
+    .where(
+      and(
+        inArray(media.id, ids),
+        eq(media.status, "ready"),
+        viewerId
+          ? sql`(${media.visibility} = 'public' OR ${media.ownerId} = ${viewerId})`
+          : sql`${media.visibility} = 'public'`,
+      ),
+    );
+
+  const order = new Map(ids.map((id, i) => [id, i]));
+  rows.sort((a, b) => (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0));
+
+  return attachTags(await attachOwners(rows));
 }
 
 export async function getUserByHandle(handle: string) {

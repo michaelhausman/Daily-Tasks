@@ -20,7 +20,8 @@ npm run dev
 
 Then open http://localhost:3000. The seed data includes the example above:
 
-    http://localhost:3000/m/aimee-mann/eau-claire-festival/2026-07-24
+    http://localhost:3000/m/eau-claire-festival/2026-07-24
+    http://localhost:3000/m/cbgb/1975-06-12     (a place and a date, no performer)
 
 Seeded accounts are `michael`, `dana_k`, `rivera`, `toneflora` — password
 `password123` for all of them.
@@ -57,11 +58,30 @@ than any after-the-fact merge tool.
 
 ### Moments are derived, not stored
 
-A **moment** is any (who, where, date) triple that has uploads. Nothing creates
-it; it's a `GROUP BY` in
-[`findMoments()`](lib/media/queries.ts). A moment springs into existence the
+A **moment is a place on a day** — CBGB on 12 June 1975, the Eau Claire festival
+on 24 July 2026. Nothing creates it; it's a `GROUP BY` in
+[`findMoments()`](lib/media/queries.ts), so a moment springs into existence the
 instant the second person tags correctly, with no backfill and nothing to keep
 in sync.
+
+The performer is deliberately **not** part of a moment's identity. It used to
+be, and that was wrong twice over: a photo of an empty CBGB storefront has no
+performer and could never pool with anything, and a festival day with forty
+bands became forty separate moments instead of one afternoon. Performers now
+live *inside* a moment as chips that filter it, so the per-artist view stays one
+click away without fragmenting the place-and-day pool.
+
+### Likes, comments, follows
+
+Comments attach to either a single upload or a whole moment. Moment-level
+comments matter more here than they would elsewhere — "what was CBGB like that
+night" is a conversation about the event, not about one person's photo of it.
+
+You can follow a **tag** (from `/explore`, once you've selected one) or a
+**moment** (from its page). Logging in then leads with a Following section:
+your places and artists first, rather than whatever the whole site posted most
+recently. Since moments have no row of their own, follows and moment comments
+store the `(place, date)` pair directly rather than a foreign key.
 
 ### Filter semantics
 
@@ -138,6 +158,8 @@ Deliberately out of scope for this first version:
   before real traffic, and it rules out serverless hosts with request timeouts
 - **No video transcoding** — originals are served as uploaded, so a phone's
   HEVC `.mov` may not play in every browser
-- No follows, likes, or comments; no email verification or password reset
+- No email verification or password reset
+- No notifications — following surfaces new material on your home page, but
+  nothing tells you it arrived
 - Tag merging has schema support (`tags.canonical_tag_id`, followed on write)
   but no admin UI yet

@@ -12,7 +12,16 @@ import { newId } from "../lib/ids";
 import { hashPassword } from "../lib/auth/password";
 import { db } from "../lib/db";
 import { runMigrations } from "../lib/db/migrate";
-import { media, mediaTags, tags, users } from "../lib/db/schema";
+import {
+  comments,
+  likes,
+  media,
+  mediaTags,
+  momentFollows,
+  tagFollows,
+  tags,
+  users,
+} from "../lib/db/schema";
 import { storage } from "../lib/storage";
 import { slugify } from "../lib/tags/normalize";
 
@@ -126,6 +135,86 @@ const ITEMS: SeedItem[] = [
     eventDate: "2026-06-14",
     hues: [40, 15],
   },
+
+  // --- A place and a date with no performer at all. This is the case the
+  // --- old model couldn't represent: nobody is playing, it's just what the
+  // --- room looked like that night, and it still forms a moment other people
+  // --- can add their own photos to.
+  {
+    owner: "dana_k",
+    kind: "photo",
+    caption: "The awning, before anyone showed up.",
+    who: [],
+    where: ["CBGB"],
+    topic: ["storefront"],
+    eventDate: "1975-06-12",
+    hues: [24, 8],
+  },
+  {
+    owner: "rivera",
+    kind: "photo",
+    caption: "Inside, looking at the stage. Same night.",
+    who: [],
+    where: ["CBGB"],
+    topic: [],
+    eventDate: "1975-06-12",
+    hues: [300, 12],
+  },
+];
+
+/** Seeded conversation, so the social layer isn't empty on first run. */
+const MEDIA_COMMENTS: Array<[itemIndex: number, handle: string, body: string]> = [
+  [0, "dana_k", "The harmonies on this are unreal. Wish I'd been closer."],
+  [0, "rivera", "You can hear the whole field singing on my recording too."],
+  [2, "michael", "This is the best audio anyone got that night."],
+];
+
+const MOMENT_COMMENTS: Array<
+  [whereSlug: string, eventDate: string, handle: string, body: string]
+> = [
+  [
+    "cbgb",
+    "1975-06-12",
+    "michael",
+    "My uncle swore he was here this night. Adding his prints when I find them.",
+  ],
+  [
+    "cbgb",
+    "1975-06-12",
+    "toneflora",
+    "The awning shot is exactly how I remember the block looking.",
+  ],
+  [
+    "eau-claire-festival",
+    "2026-07-24",
+    "toneflora",
+    "Hottest day of the weekend. Worth it for the encore.",
+  ],
+];
+
+/** [handle, tag slug] — seeded follows so the personalized feed has content. */
+const TAG_FOLLOWS: Array<[handle: string, facet: string, slug: string]> = [
+  ["michael", "who", "aimee-mann"],
+  ["michael", "where", "cbgb"],
+  ["dana_k", "who", "bon-iver"],
+  ["toneflora", "where", "eau-claire-festival"],
+];
+
+const MOMENT_FOLLOWS: Array<[handle: string, whereSlug: string, date: string]> = [
+  ["michael", "cbgb", "1975-06-12"],
+  ["dana_k", "eau-claire-festival", "2026-07-24"],
+];
+
+/** [likerHandle, itemIndex] */
+const LIKES: Array<[string, number]> = [
+  ["dana_k", 0],
+  ["rivera", 0],
+  ["toneflora", 0],
+  ["michael", 1],
+  ["rivera", 1],
+  ["michael", 2],
+  ["dana_k", 8],
+  ["michael", 8],
 ];
 
 async function gradient(
@@ -217,11 +306,16 @@ async function main() {
     return id;
   }
 
+  // Index-aligned with ITEMS, so the social fixtures can reference uploads.
+  const mediaIds: string[] = [];
+
   let n = 0;
   for (const item of ITEMS) {
     const id = newId();
     const ownerId = userIds.get(item.owner)!;
-    const label = `${item.who[0]} — ${item.kind}`;
+    // Performers are optional now, so fall back to the venue for the caption
+    // burned into the generated placeholder image.
+    const label = `${item.who[0] ?? item.where[0] ?? "untitled"} — ${item.kind}`;
 
     const isImageLike = item.kind !== "audio";
     let storageKey: string;
@@ -327,6 +421,7 @@ async function main() {
         .values(unique.map((tagId) => ({ mediaId: id, tagId })));
     }
 
+    mediaIds.push(id);
     n++;
   }
 
@@ -336,10 +431,58 @@ async function main() {
   }
 
   console.log(`  ${ITEMS.length} uploads across ${tagIds.size} tags`);
+
+  // ── social ────────────────────────────────────────────────────────────────
+  for (const [handle, index] of LIKES) {
+    const userId = userIds.get(handle);
+    const mediaId = mediaIds[index];
+    if (userId && mediaId) await db.insert(likes).values({ userId, mediaId });
+  }
+
+  for (const [index, handle, body] of MEDIA_COMMENTS) {
+    const authorId = userIds.get(handle);
+    const mediaId = mediaIds[index];
+    if (authorId && mediaId) {
+      await db.insert(comments).values({ id: newId(), authorId, mediaId, body });
+    }
+  }
+
+  for (const [whereSlug, eventDate, handle, body] of MOMENT_COMMENTS) {
+    const authorId = userIds.get(handle);
+    if (authorId) {
+      await db.insert(comments).values({
+        id: newId(),
+        authorId,
+        body,
+        momentWhere: whereSlug,
+        momentDate: eventDate,
+      });
+    }
+  }
+
+  for (const [handle, facet, slug] of TAG_FOLLOWS) {
+    const userId = userIds.get(handle);
+    const tagId = tagIds.get(`${facet}:${slug}`);
+    if (userId && tagId) await db.insert(tagFollows).values({ userId, tagId });
+  }
+
+  for (const [handle, whereSlug, eventDate] of MOMENT_FOLLOWS) {
+    const userId = userIds.get(handle);
+    if (userId) {
+      await db.insert(momentFollows).values({ userId, whereSlug, eventDate });
+    }
+  }
+
+  console.log(
+    `  ${LIKES.length} likes, ${
+      MEDIA_COMMENTS.length + MOMENT_COMMENTS.length
+    } comments, ${TAG_FOLLOWS.length + MOMENT_FOLLOWS.length} follows`,
+  );
   console.log("");
   console.log("Seeded. Try:");
   console.log("  npm run dev");
-  console.log("  http://localhost:3000/m/aimee-mann/eau-claire-festival/2026-07-24");
+  console.log("  http://localhost:3000/m/eau-claire-festival/2026-07-24");
+  console.log("  http://localhost:3000/m/cbgb/1975-06-12   (a place and a date, no performer)");
   console.log("");
   console.log("Log in as michael / password123");
 }

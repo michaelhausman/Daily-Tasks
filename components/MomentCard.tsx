@@ -5,15 +5,21 @@ import { formatEventDate } from "@/lib/tags/normalize";
 import { storage } from "@/lib/storage";
 import { FACET_COLOR } from "./Chip";
 
-export function momentHref(m: {
-  who: { slug: string };
-  where: { slug: string };
-  eventDate: string;
-}) {
-  return `/m/${m.who.slug}/${m.where.slug}/${m.eventDate}`;
+export function momentHref(m: { where: { slug: string }; eventDate: string }) {
+  return `/m/${m.where.slug}/${m.eventDate}`;
 }
 
-export function MomentCard({ moment }: { moment: Moment }) {
+export function momentKey(whereSlug: string, eventDate: string) {
+  return `${whereSlug}|${eventDate}`;
+}
+
+export function MomentCard({
+  moment,
+  commentCount = 0,
+}: {
+  moment: Moment;
+  commentCount?: number;
+}) {
   const previews = moment.previewKeys.slice(0, 4);
 
   return (
@@ -59,12 +65,6 @@ export function MomentCard({ moment }: { moment: Moment }) {
         <div className="flex flex-wrap gap-1.5">
           <span
             className="chip text-xs"
-            style={{ borderLeft: `3px solid ${FACET_COLOR.who}` }}
-          >
-            {moment.who.label}
-          </span>
-          <span
-            className="chip text-xs"
             style={{ borderLeft: `3px solid ${FACET_COLOR.where}` }}
           >
             {moment.where.label}
@@ -77,24 +77,41 @@ export function MomentCard({ moment }: { moment: Moment }) {
           </span>
         </div>
 
+        {moment.performers.length > 0 && (
+          <p className="text-xs muted">
+            <span style={{ color: FACET_COLOR.who }}>●</span>{" "}
+            {moment.performers.slice(0, 3).join(", ")}
+            {moment.performers.length > 3 &&
+              ` +${moment.performers.length - 3} more`}
+          </p>
+        )}
+
         <p className="text-xs muted">
           {moment.mediaCount} {moment.mediaCount === 1 ? "upload" : "uploads"}
           {" · "}
           {moment.contributorCount}{" "}
           {moment.contributorCount === 1 ? "person" : "people"}
+          {commentCount > 0 &&
+            ` · ${commentCount} ${commentCount === 1 ? "comment" : "comments"}`}
         </p>
       </div>
     </Link>
   );
 }
 
-export function MomentGrid({ moments }: { moments: Moment[] }) {
+export function MomentGrid({
+  moments,
+  commentCounts,
+}: {
+  moments: Moment[];
+  commentCounts?: Map<string, number>;
+}) {
   if (moments.length === 0) {
     return (
       <div className="surface rounded-xl p-10 text-center">
         <p className="muted">
-          No moments yet. A moment appears when uploads share a performer, a
-          place, and a date.
+          No moments yet. A moment appears as soon as an upload has a place and
+          a date.
         </p>
       </div>
     );
@@ -103,7 +120,13 @@ export function MomentGrid({ moments }: { moments: Moment[] }) {
   return (
     <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
       {moments.map((m) => (
-        <MomentCard key={momentHref(m)} moment={m} />
+        <MomentCard
+          key={momentHref(m)}
+          moment={m}
+          commentCount={
+            commentCounts?.get(momentKey(m.where.slug, m.eventDate)) ?? 0
+          }
+        />
       ))}
     </div>
   );

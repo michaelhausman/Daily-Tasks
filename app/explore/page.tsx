@@ -1,8 +1,11 @@
 import { Suspense } from "react";
 
+import { FollowButton } from "@/components/FollowButton";
 import { MediaGrid } from "@/components/MediaCard";
 import { MomentGrid } from "@/components/MomentCard";
 import { getCurrentUser } from "@/lib/auth/session";
+import { getTagsBySlugs } from "@/lib/tags/service";
+import { isFollowingTag, likeStateFor } from "@/lib/social/service";
 import {
   countMedia,
   findMedia,
@@ -51,6 +54,28 @@ export default async function ExplorePage({
 
   const isEmpty = selectionIsEmpty(selection);
   const moments = isEmpty ? await findMoments({ limit: 6 }) : [];
+  const likes = await likeStateFor(
+    results.map((r) => r.id),
+    user?.id,
+  );
+
+  // Following is offered for whichever tags are currently selected — that's the
+  // point at which someone has demonstrated interest in one, and it avoids
+  // hanging a button off every chip in the picker.
+  const selectedTags = await getTagsBySlugs([
+    ...selection.who.map((slug) => ({ facet: "who" as const, slug })),
+    ...selection.where.map((slug) => ({ facet: "where" as const, slug })),
+    ...selection.topic.map((slug) => ({ facet: "topic" as const, slug })),
+  ]);
+
+  const followState = new Map<string, boolean>();
+  if (user) {
+    await Promise.all(
+      selectedTags.map(async (t) => {
+        followState.set(t.id, await isFollowingTag(user.id, t.id));
+      }),
+    );
+  }
 
   return (
     <div className="space-y-8">
@@ -76,6 +101,26 @@ export default async function ExplorePage({
         </Suspense>
       </section>
 
+      {selectedTags.length > 0 && (
+        <section className="surface rounded-xl p-4">
+          <h2 className="mb-1 text-sm font-semibold">Keep up with these</h2>
+          <p className="mb-3 text-xs muted">
+            Anything new tagged this way goes to the top of your home page.
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {selectedTags.map((t) => (
+              <FollowButton
+                key={t.id}
+                target={{ kind: "tag", tagId: t.id }}
+                initialFollowing={followState.get(t.id) ?? false}
+                loggedIn={Boolean(user)}
+                label={`Follow ${t.label}`}
+              />
+            ))}
+          </div>
+        </section>
+      )}
+
       {isEmpty && moments.length > 0 && (
         <section>
           <h2 className="mb-3 text-xl font-bold">Moments</h2>
@@ -87,7 +132,7 @@ export default async function ExplorePage({
         <h2 className="mb-3 text-xl font-bold">
           {isEmpty ? "Everything" : "Matching uploads"}
         </h2>
-        <MediaGrid items={results} />
+        <MediaGrid items={results} likes={likes} loggedIn={Boolean(user)} />
       </section>
     </div>
   );

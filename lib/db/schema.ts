@@ -181,6 +181,100 @@ export const mediaTags = pgTable(
   ],
 );
 
+export const likes = pgTable(
+  "likes",
+  {
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    mediaId: text("media_id")
+      .notNull()
+      .references(() => media.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.userId, t.mediaId] }),
+    index("likes_media_idx").on(t.mediaId),
+  ],
+);
+
+/**
+ * Comments attach to either a single upload or a whole moment.
+ *
+ * Moments have no row of their own — they're derived from (where, when) — so a
+ * moment comment stores that pair directly rather than a foreign key. A CHECK
+ * constraint in migrate.ts enforces that exactly one target is set.
+ *
+ * Moment-level comments matter more here than they would elsewhere: "what was
+ * CBGB like that night" is a conversation about the event, not about one
+ * person's photo of it.
+ */
+export const comments = pgTable(
+  "comments",
+  {
+    id: text("id").primaryKey(),
+    authorId: text("author_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    body: text("body").notNull(),
+
+    mediaId: text("media_id").references(() => media.id, {
+      onDelete: "cascade",
+    }),
+    momentWhere: text("moment_where"),
+    momentDate: date("moment_date", { mode: "string" }),
+
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    index("comments_media_idx").on(t.mediaId, t.createdAt),
+    index("comments_moment_idx").on(t.momentWhere, t.momentDate, t.createdAt),
+  ],
+);
+
+export const tagFollows = pgTable(
+  "tag_follows",
+  {
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    tagId: text("tag_id")
+      .notNull()
+      .references(() => tags.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.userId, t.tagId] }),
+    index("tag_follows_tag_idx").on(t.tagId),
+  ],
+);
+
+/** Same derived-key reasoning as moment comments: no moment row to point at. */
+export const momentFollows = pgTable(
+  "moment_follows",
+  {
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    whereSlug: text("where_slug").notNull(),
+    eventDate: date("event_date", { mode: "string" }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.userId, t.whereSlug, t.eventDate] }),
+    index("moment_follows_key_idx").on(t.whereSlug, t.eventDate),
+  ],
+);
+
 export type User = typeof users.$inferSelect;
 export type Media = typeof media.$inferSelect;
 export type Tag = typeof tags.$inferSelect;
+export type Comment = typeof comments.$inferSelect;

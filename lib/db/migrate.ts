@@ -75,6 +75,43 @@ const STATEMENTS = [
     PRIMARY KEY (media_id, tag_id)
   )`,
   `CREATE INDEX IF NOT EXISTS media_tags_tag_idx ON media_tags (tag_id)`,
+
+  `CREATE TABLE IF NOT EXISTS likes (
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    media_id TEXT NOT NULL REFERENCES media(id) ON DELETE CASCADE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (user_id, media_id)
+  )`,
+  `CREATE INDEX IF NOT EXISTS likes_media_idx ON likes (media_id)`,
+
+  `CREATE TABLE IF NOT EXISTS comments (
+    id TEXT PRIMARY KEY,
+    author_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    body TEXT NOT NULL,
+    media_id TEXT REFERENCES media(id) ON DELETE CASCADE,
+    moment_where TEXT,
+    moment_date DATE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+  )`,
+  `CREATE INDEX IF NOT EXISTS comments_media_idx ON comments (media_id, created_at)`,
+  `CREATE INDEX IF NOT EXISTS comments_moment_idx ON comments (moment_where, moment_date, created_at)`,
+
+  `CREATE TABLE IF NOT EXISTS tag_follows (
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    tag_id TEXT NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (user_id, tag_id)
+  )`,
+  `CREATE INDEX IF NOT EXISTS tag_follows_tag_idx ON tag_follows (tag_id)`,
+
+  `CREATE TABLE IF NOT EXISTS moment_follows (
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    where_slug TEXT NOT NULL,
+    event_date DATE NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (user_id, where_slug, event_date)
+  )`,
+  `CREATE INDEX IF NOT EXISTS moment_follows_key_idx ON moment_follows (where_slug, event_date)`,
 ];
 
 /**
@@ -87,6 +124,14 @@ const CONSTRAINTS: Array<[table: string, name: string, check: string]> = [
   ["media", "media_visibility_check", `visibility IN ('public','unlisted')`],
   ["media", "media_status_check", `status IN ('processing','ready','failed')`],
   ["tags", "tags_facet_check", `facet IN ('who','where','topic')`],
+  // A comment belongs to exactly one thing: an upload, or a moment.
+  [
+    "comments",
+    "comments_one_target_check",
+    `(media_id IS NOT NULL AND moment_where IS NULL AND moment_date IS NULL)
+     OR (media_id IS NULL AND moment_where IS NOT NULL AND moment_date IS NOT NULL)`,
+  ],
+  ["comments", "comments_body_check", `length(btrim(body)) > 0`],
 ];
 
 export async function runMigrations() {
