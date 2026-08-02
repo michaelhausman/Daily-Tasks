@@ -1,21 +1,35 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import type { Facet } from "@/lib/db/schema";
+import { slugify } from "@/lib/tags/normalize";
 import { FACET_COLOR } from "./Chip";
 
 type Suggestion = { slug: string; label: string; usageCount: number };
+
+/** A row in the dropdown: either an existing tag, or "make a new one". */
+type Option =
+  | { kind: "existing"; label: string; slug: string; usageCount: number }
+  | { kind: "create"; label: string };
 
 /**
  * Typeahead over existing tags, and the single most important piece of UI in
  * the app for data quality.
  *
- * Every duplicate tag that gets created here ("aimee mann" next to the existing
- * "Aimee Mann") splits a pool in half, and the split is invisible — both
- * uploaders see their own file and conclude nobody else posted. Showing what
- * already exists, with usage counts, while they type is what prevents that.
- * Normalization in lib/tags/normalize.ts is the safety net underneath.
+ * It has two jobs that pull against each other:
+ *
+ * 1. Steer people onto tags that already exist. Every duplicate created here
+ *    ("aimee mann" next to "Aimee Mann") splits a pool in half, and the split
+ *    is invisible — both uploaders see their own file and assume nobody else
+ *    posted. Showing what exists, with usage counts, is what prevents that.
+ *
+ * 2. Make it obvious you can invent a new one. The first person to upload a
+ *    David Bowie photo has no existing tag to pick, and if the dropdown simply
+ *    disappears when nothing matches, the field reads as if it rejected them.
+ *    So an explicit "Add …" row always appears for unmatched input.
+ *
+ * Job 1 is why the create row sorts *below* the matches rather than above.
  */
 export function TagInput({
   facet,
@@ -69,11 +83,38 @@ export function TagInput({
     return () => document.removeEventListener("mousedown", onDocClick);
   }, []);
 
-  function add(label: string) {
-    const clean = label.trim().replace(/\s+/g, " ");
+  const trimmed = draft.trim().replace(/\s+/g, " ");
+
+  const options = useMemo<Option[]>(() => {
+    const rows: Option[] = suggestions.map((s) => ({
+      kind: "existing",
+      label: s.label,
+      slug: s.slug,
+      usageCount: s.usageCount,
+    }));
+
+    if (!trimmed) return rows;
+
+    // Compare on the slug, not the raw text — "aimee mann" must count as
+    // already matching "Aimee Mann", or we'd offer to create a duplicate that
+    // the server would then silently merge, which is confusing.
+    const draftSlug = slugify(trimmed);
+    if (!draftSlug) return rows;
+
+    const alreadyExists = suggestions.some((s) => s.slug === draftSlug);
+    const alreadyPicked = value.some((v) => slugify(v) === draftSlug);
+
+    if (!alreadyExists && !alreadyPicked) {
+      rows.push({ kind: "create", label: trimmed });
+    }
+
+    return rows;
+  }, [suggestions, trimmed, value]);
+
+  function commit(option: Option) {
+    const clean = option.label.trim().replace(/\s+/g, " ");
     if (!clean) return;
-    // Case-insensitive dedupe within the form itself.
-    if (value.some((v) => v.toLowerCase() === clean.toLowerCase())) {
+    if (value.some((v) => slugify(v) === slugify(clean))) {
       setDraft("");
       return;
     }
@@ -89,15 +130,13 @@ export function TagInput({
   function onKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
     if (e.key === "Enter" || e.key === ",") {
       e.preventDefault();
-      if (open && suggestions[highlight]) {
-        add(suggestions[highlight].label);
-      } else {
-        add(draft);
-      }
+      const picked = options[highlight];
+      if (open && picked) commit(picked);
+      else if (trimmed) commit({ kind: "create", label: trimmed });
     } else if (e.key === "ArrowDown") {
       e.preventDefault();
       setOpen(true);
-      setHighlight((h) => Math.min(h + 1, suggestions.length - 1));
+      setHighlight((h) => Math.min(h + 1, options.length - 1));
     } else if (e.key === "ArrowUp") {
       e.preventDefault();
       setHighlight((h) => Math.max(h - 1, 0));
@@ -108,12 +147,14 @@ export function TagInput({
     }
   }
 
+  const color = FACET_COLOR[facet];
+
   return (
     <div ref={boxRef} className="relative">
       <label className="mb-1.5 block text-sm font-medium">
         <span
           className="mr-2 inline-block h-2 w-2 rounded-full align-middle"
-          style={{ background: FACET_COLOR[facet] }}
+          style={{ background: color }}
         />
         {label}
       </label>
@@ -126,7 +167,7 @@ export function TagInput({
           <span
             key={`${v}-${i}`}
             className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-sm text-white"
-            style={{ background: FACET_COLOR[facet] }}
+            style={{ background: color }}
           >
             {v}
             <button
@@ -148,32 +189,52 @@ export function TagInput({
           }}
           onFocus={() => setOpen(true)}
           onKeyDown={onKeyDown}
-          placeholder={value.length === 0 ? placeholder : ""}
+          placeholder={value.length === 0 ? placeholder : "Add another…"}
           className="min-w-[8rem] flex-1 bg-transparent px-1 py-1 text-sm outline-none"
+          aria-autocomplete="list"
+          aria-expanded={open && options.length > 0}
         />
       </div>
 
-      {open && suggestions.length > 0 && (
+      {open && options.length > 0 && (
         <ul
           className="absolute z-20 mt-1 w-full overflow-hidden rounded-lg shadow-xl"
           style={{ background: "var(--surface)", border: "1px solid var(--border)" }}
         >
-          {suggestions.map((s, i) => (
-            <li key={s.slug}>
+          {options.map((option, i) => (
+            <li key={option.kind === "create" ? "__create" : option.slug}>
               <button
                 type="button"
                 onMouseEnter={() => setHighlight(i)}
-                onClick={() => add(s.label)}
-                className="flex w-full items-center justify-between px-3 py-2 text-left text-sm"
+                onClick={() => commit(option)}
+                className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-sm"
                 style={{
                   background:
                     i === highlight ? "var(--surface-2)" : "transparent",
                 }}
               >
-                <span>{s.label}</span>
-                <span className="text-xs muted">
-                  {s.usageCount} {s.usageCount === 1 ? "upload" : "uploads"}
-                </span>
+                {option.kind === "existing" ? (
+                  <>
+                    <span>{option.label}</span>
+                    <span className="shrink-0 text-xs muted">
+                      {option.usageCount}{" "}
+                      {option.usageCount === 1 ? "upload" : "uploads"}
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <span>
+                      <span
+                        className="mr-1.5 font-semibold"
+                        style={{ color }}
+                      >
+                        +
+                      </span>
+                      Add <strong>{option.label}</strong>
+                    </span>
+                    <span className="shrink-0 text-xs muted">new tag</span>
+                  </>
+                )}
               </button>
             </li>
           ))}
