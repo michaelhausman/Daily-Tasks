@@ -1,0 +1,11 @@
+# Adds ffmpeg to the build image.
+#
+# Without it, video and audio still upload, store, and play — they just get a
+# generic placeholder instead of a poster frame or a waveform, because
+# lib/media/probe.ts degrades to null rather than failing the upload.
+#
+# The literal "..." is nixpacks syntax meaning "keep whatever you were going to
+# install and add to it". Dropping it would replace the Node toolchain with
+# ffmpeg alone and nothing would build.
+[phases.setup]
+nixPkgs = ["...", "ffmpeg"]
