@@ -72,11 +72,38 @@ const globalForDb = globalThis as unknown as {
   __tagpoolDb?: ReturnType<typeof createClient>;
 };
 
-export const db = globalForDb.__tagpoolDb ?? createClient();
+type Client = ReturnType<typeof createClient>;
 
-if (process.env.NODE_ENV !== "production") {
-  globalForDb.__tagpoolDb = db;
+function getClient(): Client {
+  if (!globalForDb.__tagpoolDb) {
+    globalForDb.__tagpoolDb = createClient();
+  }
+  return globalForDb.__tagpoolDb;
 }
+
+/**
+ * Connected lazily, on first query rather than on import.
+ *
+ * `next build` imports every route module to analyse it. Creating the client at
+ * module scope meant the *build* opened a database — spinning up PGlite and
+ * writing a data directory inside the build container, or constructing a pool
+ * against a server that may not be reachable from a builder at all. Neither is
+ * something a build should be doing, and it's an unnecessary way for a deploy
+ * to fail before the app has even started.
+ *
+ * The proxy keeps the ergonomics identical: callers still `import { db }` and
+ * call methods on it, and nothing happens until one of them actually runs.
+ */
+export const db = new Proxy({} as Client, {
+  get(_target, prop, receiver) {
+    const client = getClient();
+    const value = Reflect.get(client as object, prop, receiver);
+    return typeof value === "function" ? value.bind(client) : value;
+  },
+  has(_target, prop) {
+    return Reflect.has(getClient() as object, prop);
+  },
+});
 
 /**
  * PGlite is an in-process database: each process that opens the directory gets
