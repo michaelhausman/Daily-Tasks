@@ -10,6 +10,7 @@ import { ReportButton } from "@/components/ReportButton";
 import { getCurrentUser } from "@/lib/auth/session";
 import { isAdmin } from "@/lib/config";
 import { canDelete } from "@/lib/media/delete";
+import { canEdit } from "@/lib/media/edit";
 import { findMedia, getMediaById } from "@/lib/media/queries";
 import { likeStateFor, listComments } from "@/lib/social/service";
 import { DeleteButton } from "./DeleteButton";
@@ -188,6 +189,14 @@ export default async function MediaPage({
           className="flex flex-wrap items-start gap-4 border-t pt-4"
           style={{ borderColor: "var(--border)" }}
         >
+          {canEdit(user, item.ownerId) && (
+            <Link
+              href={`/media/${item.id}/edit`}
+              className="text-sm muted underline hover:opacity-80"
+            >
+              Edit tags and details
+            </Link>
+          )}
           {canDelete(user, item.ownerId) && (
             <DeleteButton mediaId={item.id} isOwn={user?.id === item.ownerId} />
           )}
