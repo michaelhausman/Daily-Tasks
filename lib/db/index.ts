@@ -39,6 +39,29 @@ const PGLITE_DIR =
 export const usingRealPostgres = Boolean(DATABASE_URL);
 
 function createClient() {
+  /**
+   * Never fall back to the embedded database in production.
+   *
+   * PGlite is a whole Postgres compiled to WebAssembly living in the app's own
+   * memory: ~550MB resident versus ~85MB when talking to a real server. On a
+   * small container that difference is the gap between running and being
+   * OOM-killed, and because the fallback was silent the symptom was a crash
+   * loop with no hint that a database URL was missing.
+   *
+   * It is also simply wrong to serve real traffic from a database stored in a
+   * container's filesystem, which is discarded on every deploy.
+   */
+  if (process.env.NODE_ENV === "production" && !DATABASE_URL) {
+    throw new Error(
+      "DATABASE_URL is not set.\n\n" +
+        "In production Tagpool needs a real Postgres server. On Railway, add a " +
+        "Postgres service and then add a variable to THIS service:\n\n" +
+        "    DATABASE_URL=${{Postgres.DATABASE_URL}}\n\n" +
+        "Adding the database alone does not connect it — the reference is what " +
+        "wires the two together. See DEPLOY.md.",
+    );
+  }
+
   if (DATABASE_URL) {
     const pool = new Pool({
       connectionString: DATABASE_URL,

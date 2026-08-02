@@ -33,8 +33,13 @@ node -e "console.log(require('crypto').randomBytes(6).toString('base64url'))"
 3. The first deploy will fail. That's expected — there's no database yet.
 4. In the same project: **New** → **Database** → **Add PostgreSQL**.
 
-Railway wires `DATABASE_URL` into your app automatically. You don't have to copy
-it anywhere.
+**Adding the database does not connect it to your app.** They're separate
+services, and the app needs a variable pointing at the database — that's step 3
+below. Skipping it is the single most confusing failure here: the app can't find
+a database, and until recently it would quietly fall back to an embedded one,
+balloon past the container's memory limit, and get OOM-killed in a restart loop
+with nothing in the logs about a missing URL. It now refuses to start and says
+so plainly, but the fix is the same: add the variable.
 
 ## 2. Add a disk for the uploads
 
@@ -53,24 +58,30 @@ App service → **Variables** → **Raw Editor**, and paste this, editing the la
 three lines:
 
 ```bash
+DATABASE_URL=${{Postgres.DATABASE_URL}}
 STORAGE_ROOT=/data/media
-NODE_ENV=production
 
 ADMIN_HANDLES=michael
 SIGNUP_INVITE_CODE=paste-the-code-you-generated
 TAKEDOWN_CONTACT_EMAIL=you@example.com
 ```
 
+The first line is a **variable reference**, not a placeholder — paste it exactly
+as written, `${{...}}` and all. Railway resolves it to the real connection
+string at deploy time. If your database service isn't named `Postgres`, use its
+actual name.
+
 What these do:
 
 | Variable | Why it matters |
 |---|---|
+| `DATABASE_URL` | Connects the app to the database. Without it the app refuses to start. |
 | `STORAGE_ROOT` | Points uploads at the volume. **Miss this and every photo disappears on your next deploy.** |
 | `ADMIN_HANDLES` | Who can moderate. Without it nobody can hide, delete, or suspend anything. Use the handle you'll sign up with. |
 | `SIGNUP_INVITE_CODE` | Required to create an account. Browsing stays public. |
 | `TAKEDOWN_CONTACT_EMAIL` | Shown on `/takedown` for rights holders without an account. |
 
-`DATABASE_URL` and `PORT` are set by Railway. Don't add them yourself.
+`PORT` and `NODE_ENV` are set by Railway. Don't add them yourself.
 
 Optional, with sensible defaults already: `MAX_UPLOAD_MB` (50),
 `UPLOADS_PER_HOUR` (30), `SIGNUP_DISABLED`. See `.env.example`.
@@ -198,8 +209,19 @@ the risk profile completely, and these should be in place first:
 
 ## When something goes wrong
 
+**"Out of Memory (OOM)" and a restart loop.** Almost always a missing
+`DATABASE_URL` — add the `${{Postgres.DATABASE_URL}}` reference from step 3.
+Current builds refuse to start and say so, rather than crash-looping.
+
+**"DATABASE_URL is not set" in the deploy log.** Same fix. Note the variable
+goes on the **app** service, not the database.
+
 **Deploy fails immediately.** Usually the database isn't attached yet. Confirm
 the Postgres service sits in the same project as the app.
+
+**Build runs out of memory.** The Next.js build peaks near 1GB. If the builder
+can't cope, add `NODE_OPTIONS=--max-old-space-size=1536` as a variable so V8
+collects more aggressively instead of growing.
 
 **Site loads but every image is broken.** `STORAGE_ROOT` isn't set, or doesn't
 match the volume's mount path. It must be `/data/media` for a volume mounted at
