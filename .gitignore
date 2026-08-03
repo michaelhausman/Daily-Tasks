@@ -11,6 +11,3 @@ out/
 .DS_Store
 next-env.d.ts
 tsconfig.tsbuildinfo
-
-# walkthrough build output
-.tour/

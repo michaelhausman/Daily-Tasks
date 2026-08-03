@@ -1,0 +1,590 @@
+<title>Tagpool — see it and run it</title>
+
+<style>
+  /* ---- tokens -------------------------------------------------------- */
+  :root {
+    --ink:        #1a1527;
+    --ground:     #faf8ff;
+    --surface:    #ffffff;
+    --surface-2:  #f3f0fb;
+    --hairline:   #e4dff2;
+    --muted:      #6d6683;
+
+    --who:   #6f4ce8;
+    --where: #0d8f66;
+    --when:  #d93b3b;
+
+    --shadow: 0 1px 2px rgba(26,21,39,.05), 0 8px 24px rgba(26,21,39,.06);
+
+    --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+    --sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --ink:        #f2effb;
+      --ground:     #0e0b16;
+      --surface:    #181327;
+      --surface-2:  #1f1932;
+      --hairline:   #2e2743;
+      --muted:      #9b93b4;
+
+      --who:   #8b6dff;
+      --where: #2bbd88;
+      --when:  #ff6b6b;
+
+      --shadow: 0 1px 2px rgba(0,0,0,.4), 0 12px 32px rgba(0,0,0,.35);
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --ink:        #f2effb;
+    --ground:     #0e0b16;
+    --surface:    #181327;
+    --surface-2:  #1f1932;
+    --hairline:   #2e2743;
+    --muted:      #9b93b4;
+    --who:   #8b6dff;
+    --where: #2bbd88;
+    --when:  #ff6b6b;
+    --shadow: 0 1px 2px rgba(0,0,0,.4), 0 12px 32px rgba(0,0,0,.35);
+  }
+
+  :root[data-theme="light"] {
+    --ink:        #1a1527;
+    --ground:     #faf8ff;
+    --surface:    #ffffff;
+    --surface-2:  #f3f0fb;
+    --hairline:   #e4dff2;
+    --muted:      #6d6683;
+    --who:   #6f4ce8;
+    --where: #0d8f66;
+    --when:  #d93b3b;
+    --shadow: 0 1px 2px rgba(26,21,39,.05), 0 8px 24px rgba(26,21,39,.06);
+  }
+
+  /* ---- base ---------------------------------------------------------- */
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--ground);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-size: 16px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .wrap {
+    max-width: 62rem;
+    margin: 0 auto;
+    padding: clamp(2rem, 5vw, 4.5rem) clamp(1.1rem, 4vw, 2rem) 6rem;
+  }
+
+  .prose { max-width: 40rem; }
+
+  h1, h2, h3 { text-wrap: balance; margin: 0; }
+
+  h1 {
+    font-size: clamp(2rem, 5.5vw, 3.1rem);
+    line-height: 1.02;
+    letter-spacing: -.035em;
+    font-weight: 800;
+  }
+
+  h2 {
+    font-size: clamp(1.35rem, 3vw, 1.75rem);
+    line-height: 1.15;
+    letter-spacing: -.022em;
+    font-weight: 750;
+  }
+
+  h3 {
+    font-size: 1.02rem;
+    letter-spacing: -.01em;
+    font-weight: 700;
+  }
+
+  p { margin: 0; }
+  a { color: var(--who); }
+
+  code, kbd {
+    font-family: var(--mono);
+    font-size: .875em;
+    background: var(--surface-2);
+    border: 1px solid var(--hairline);
+    border-radius: 5px;
+    padding: .1em .38em;
+  }
+
+  .muted { color: var(--muted); }
+
+  .eyebrow {
+    font-family: var(--mono);
+    font-size: .7rem;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+
+  /* ---- the facet rail: the page's one structural device --------------
+     Three segments, one per facet, in the product's own colors. It marks
+     every section head because who/where/when is what the product is. */
+  .rail {
+    display: flex;
+    gap: 3px;
+    width: 4.5rem;
+    margin-bottom: .85rem;
+  }
+  .rail i { height: 3px; border-radius: 2px; flex: 1; opacity: .3; }
+  .rail i:nth-child(1) { background: var(--who); }
+  .rail i:nth-child(2) { background: var(--where); }
+  .rail i:nth-child(3) { background: var(--when); }
+  .rail[data-on="who"]   i:nth-child(1),
+  .rail[data-on="where"] i:nth-child(2),
+  .rail[data-on="when"]  i:nth-child(3),
+  .rail[data-on="all"]   i { opacity: 1; }
+
+  section { margin-top: clamp(3rem, 7vw, 5rem); }
+
+  /* ---- hero ---------------------------------------------------------- */
+  .lede {
+    font-size: clamp(1.05rem, 2.2vw, 1.22rem);
+    line-height: 1.55;
+    color: var(--muted);
+    margin-top: 1.1rem;
+    max-width: 34rem;
+  }
+
+  .chiprow { display: flex; flex-wrap: wrap; gap: .45rem; margin-top: 1.6rem; }
+
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: .45rem;
+    border-radius: 999px;
+    padding: .3rem .8rem .3rem .6rem;
+    font-size: .855rem;
+    font-weight: 600;
+    background: var(--surface);
+    border: 1px solid var(--hairline);
+    box-shadow: var(--shadow);
+  }
+  .chip::before {
+    content: "";
+    width: 7px; height: 7px;
+    border-radius: 999px;
+    background: var(--dot);
+  }
+  .chip.who   { --dot: var(--who); }
+  .chip.where { --dot: var(--where); }
+  .chip.when  { --dot: var(--when); }
+
+  /* ---- steps: a real sequence, so it gets real numbers ---------------- */
+  ol.steps {
+    list-style: none;
+    margin: 1.6rem 0 0;
+    padding: 0;
+    display: grid;
+    gap: .5rem;
+    counter-reset: step;
+  }
+
+  ol.steps li {
+    counter-increment: step;
+    display: grid;
+    grid-template-columns: 1.65rem 1fr;
+    gap: .9rem;
+    align-items: start;
+    background: var(--surface);
+    border: 1px solid var(--hairline);
+    border-radius: 10px;
+    padding: .8rem .95rem;
+    box-shadow: var(--shadow);
+  }
+
+  ol.steps li::before {
+    content: counter(step);
+    font-family: var(--mono);
+    font-size: .72rem;
+    font-weight: 700;
+    color: var(--muted);
+    background: var(--surface-2);
+    border: 1px solid var(--hairline);
+    border-radius: 6px;
+    height: 1.65rem;
+    display: grid;
+    place-items: center;
+    font-variant-numeric: tabular-nums;
+  }
+
+  ol.steps li > div { min-width: 0; }
+
+  ol.steps code {
+    background: none;
+    border: 0;
+    padding: 0;
+    font-size: .875rem;
+    font-weight: 600;
+  }
+
+  ol.steps .note {
+    display: block;
+    font-family: var(--sans);
+    font-size: .82rem;
+    color: var(--muted);
+    margin-top: .12rem;
+    font-weight: 400;
+  }
+
+  .term {
+    margin-top: 1rem;
+    background: var(--surface-2);
+    border: 1px solid var(--hairline);
+    border-radius: 10px;
+    padding: .9rem 1rem;
+    overflow-x: auto;
+  }
+  .term pre {
+    margin: 0;
+    font-family: var(--mono);
+    font-size: .82rem;
+    line-height: 1.75;
+  }
+  .term .c { color: var(--muted); }
+
+  /* ---- screenshots ---------------------------------------------------- */
+  figure { margin: 1.5rem 0 0; }
+
+  .shot {
+    border: 1px solid var(--hairline);
+    border-radius: 12px;
+    overflow: hidden;
+    background: var(--surface-2);
+    box-shadow: var(--shadow);
+    max-height: 33rem;
+    overflow-y: auto;
+  }
+  .shot img { display: block; width: 100%; height: auto; }
+
+  figcaption {
+    font-size: .845rem;
+    color: var(--muted);
+    margin-top: .6rem;
+    max-width: 38rem;
+  }
+
+  .split {
+    display: grid;
+    gap: 1.5rem;
+    align-items: start;
+    margin-top: 1.5rem;
+  }
+  @media (min-width: 60rem) {
+    .split { grid-template-columns: 1fr 19rem; gap: 2.2rem; }
+  }
+
+  .phone {
+    border: 1px solid var(--hairline);
+    border-radius: 16px;
+    overflow: hidden;
+    background: var(--surface-2);
+    box-shadow: var(--shadow);
+    max-height: 33rem;
+    overflow-y: auto;
+  }
+  .phone img { display: block; width: 100%; height: auto; }
+
+  /* ---- three-facet explainer ------------------------------------------ */
+  .facets {
+    display: grid;
+    gap: .7rem;
+    margin-top: 1.5rem;
+  }
+  @media (min-width: 48rem) { .facets { grid-template-columns: repeat(3, 1fr); } }
+
+  .facet {
+    background: var(--surface);
+    border: 1px solid var(--hairline);
+    border-top: 2px solid var(--tone);
+    border-radius: 10px;
+    padding: .95rem 1rem 1.05rem;
+    box-shadow: var(--shadow);
+  }
+  .facet.who   { --tone: var(--who); }
+  .facet.where { --tone: var(--where); }
+  .facet.when  { --tone: var(--when); }
+
+  .facet .k {
+    font-family: var(--mono);
+    font-size: .68rem;
+    letter-spacing: .13em;
+    text-transform: uppercase;
+    color: var(--tone);
+    font-weight: 700;
+  }
+  .facet .v { font-weight: 700; margin-top: .28rem; font-size: 1.02rem; }
+  .facet .d { font-size: .84rem; color: var(--muted); margin-top: .3rem; line-height: 1.5; }
+
+  /* ---- click-path list ------------------------------------------------ */
+  ul.path {
+    list-style: none;
+    margin: 1.4rem 0 0;
+    padding: 0;
+    display: grid;
+    gap: .45rem;
+  }
+  ul.path li {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: .8rem;
+    align-items: baseline;
+    padding: .7rem .9rem;
+    background: var(--surface);
+    border: 1px solid var(--hairline);
+    border-radius: 9px;
+    font-size: .93rem;
+  }
+  ul.path .u {
+    font-family: var(--mono);
+    font-size: .78rem;
+    color: var(--who);
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  @media (max-width: 40rem) {
+    ul.path li { grid-template-columns: 1fr; gap: .25rem; }
+  }
+
+  .callout {
+    margin-top: 1.4rem;
+    padding: .95rem 1.1rem;
+    background: var(--surface-2);
+    border: 1px solid var(--hairline);
+    border-left: 2px solid var(--when);
+    border-radius: 0 9px 9px 0;
+    font-size: .9rem;
+    line-height: 1.55;
+  }
+
+  hr.rule {
+    border: 0;
+    border-top: 1px solid var(--hairline);
+    margin: 3.5rem 0 0;
+  }
+
+  :focus-visible { outline: 2px solid var(--who); outline-offset: 2px; border-radius: 3px; }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { animation: none !important; transition: none !important; }
+  }
+</style>
+
+<div class="wrap">
+
+  <header>
+    <div class="rail" data-on="all"><i></i><i></i><i></i></div>
+    <h1>Tagpool</h1>
+    <p class="lede">
+      Your media-sharing site, built and running. Here&rsquo;s how to get it on
+      your screen in about three minutes &mdash; and what you&rsquo;ll be looking at
+      once it&rsquo;s there.
+    </p>
+    <div class="chiprow">
+      <span class="chip who">Aimee Mann</span>
+      <span class="chip where">Eau Claire Festival</span>
+      <span class="chip when">July 24, 2026</span>
+    </div>
+  </header>
+
+  <section>
+    <div class="rail" data-on="all"><i></i><i></i><i></i></div>
+    <span class="eyebrow">Run it</span>
+    <h2>Four commands on your own machine</h2>
+    <div class="prose" style="margin-top:.7rem">
+      <p class="muted">
+        You&rsquo;ll need <a href="https://nodejs.org">Node.js</a> 20 or newer &mdash;
+        run <code>node -v</code> to check. Nothing else: no database to install,
+        no accounts, no API keys.
+      </p>
+    </div>
+
+    <div class="term">
+<pre><span class="c"># get the code</span>
+git clone https://github.com/michaelhausman/Daily-Tasks.git
+cd Daily-Tasks
+git checkout claude/media-sharing-tagging-platform-inmmg3
+
+<span class="c"># set it up and start</span>
+npm install
+npm run db:migrate
+npm run seed
+npm run dev</pre>
+    </div>
+
+    <ol class="steps">
+      <li><div><code>npm install</code><span class="note">Pulls the dependencies. Takes the longest &mdash; about a minute.</span></div></li>
+      <li><div><code>npm run db:migrate</code><span class="note">Creates the local database file. Instant.</span></div></li>
+      <li><div><code>npm run seed</code><span class="note">Fills it with the Aimee Mann example below, so the app isn&rsquo;t empty on arrival.</span></div></li>
+      <li><div><code>npm run dev</code><span class="note">Starts it, then open <code>localhost:3000</code>.</span></div></li>
+    </ol>
+
+    <div class="callout">
+      Log in as <code>michael</code> with password <code>password123</code> to
+      upload. Any of the four seeded accounts work &mdash; <code>dana_k</code>,
+      <code>rivera</code>, <code>toneflora</code> &mdash; same password.
+      To wipe it and start clean: <code>rm -rf .data</code>, then migrate and seed again.
+    </div>
+  </section>
+
+  <hr class="rule" />
+
+  <section>
+    <div class="rail" data-on="all"><i></i><i></i><i></i></div>
+    <span class="eyebrow">What you&rsquo;ll see</span>
+    <h2>The home page</h2>
+    <div class="prose" style="margin-top:.7rem">
+      <p class="muted">
+        Moments first, then everything recent. A moment is a performer, a place,
+        and a day &mdash; pooled from everyone who was there.
+      </p>
+    </div>
+    <figure>
+      <div class="shot"><img src="{{home}}" alt="Tagpool home page showing moment cards and a grid of recent uploads" /></div>
+      <figcaption>Scroll the panel to see the full page. Every card is real seeded data.</figcaption>
+    </figure>
+  </section>
+
+  <section>
+    <div class="rail" data-on="all"><i></i><i></i><i></i></div>
+    <span class="eyebrow">The idea, working</span>
+    <h2>Your exact example</h2>
+    <div class="prose" style="margin-top:.7rem">
+      <p class="muted">
+        Five different people uploaded from the Aimee Mann show at the Eau Claire
+        festival on July 24 &mdash; photos, a video, and a board recording. None of
+        them created an event or joined a group. They each tagged three things,
+        and the page assembled itself.
+      </p>
+    </div>
+
+    <div class="split">
+      <figure style="margin:0">
+        <div class="shot"><img src="{{moment}}" alt="Moment page pooling five uploads from five people at the Aimee Mann Eau Claire show" /></div>
+        <figcaption>
+          <code>/m/aimee-mann/eau-claire-festival/2026-07-24</code>
+        </figcaption>
+      </figure>
+      <figure style="margin:0">
+        <div class="phone"><img src="{{moment-phone}}" alt="The same moment page on a phone-sized screen" /></div>
+        <figcaption>The same page on a phone. Everything works at 390px wide.</figcaption>
+      </figure>
+    </div>
+
+    <div class="facets">
+      <div class="facet who">
+        <div class="k">Who</div>
+        <div class="v">Aimee Mann</div>
+        <div class="d">Performer, artist, team, person. Type-ahead offers the ones already in use.</div>
+      </div>
+      <div class="facet where">
+        <div class="k">Where</div>
+        <div class="v">Eau Claire Festival</div>
+        <div class="d">Venue, festival, city. Namespaced, so a venue can&rsquo;t collide with a band of the same name.</div>
+      </div>
+      <div class="facet when">
+        <div class="k">When</div>
+        <div class="v">July 24, 2026</div>
+        <div class="d">A real date, read from the photo&rsquo;s own EXIF when the camera recorded it.</div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="rail" data-on="all"><i></i><i></i><i></i></div>
+    <span class="eyebrow">Browsing</span>
+    <h2>Pick one tag or all of them</h2>
+    <div class="prose" style="margin-top:.7rem">
+      <p class="muted">
+        Picking two names in the same row widens the search &mdash; either performer.
+        Picking across rows narrows it. So &ldquo;Aimee Mann&rdquo; alone gives you
+        everything of hers ever; adding the festival and the date lands you on that
+        one show.
+      </p>
+    </div>
+    <figure>
+      <div class="shot"><img src="{{explore-filtered}}" alt="Explore page with who, where and when chips selected, narrowing to five matching uploads" /></div>
+      <figcaption>All three facets selected. The counts on each chip update as you narrow.</figcaption>
+    </figure>
+  </section>
+
+  <section>
+    <div class="rail" data-on="all"><i></i><i></i><i></i></div>
+    <span class="eyebrow">Uploading</span>
+    <h2>Why the tags actually hold together</h2>
+    <div class="prose" style="margin-top:.7rem">
+      <p class="muted">
+        Typing <code>AIMEE M</code> offers the existing <strong>Aimee Mann</strong>
+        with its upload count, rather than quietly creating a fifth spelling. This
+        is the part that decides whether the whole idea works: two people typing
+        the same name differently is how a pool splits in half without anyone
+        noticing.
+      </p>
+    </div>
+    <figure>
+      <div class="shot"><img src="{{upload-typeahead}}" alt="Upload form with the who field showing a type-ahead suggestion for Aimee Mann with six uploads" /></div>
+    </figure>
+    <figure>
+      <div class="shot"><img src="{{media-audio}}" alt="Audio detail page with a waveform scrubber, facet chips, and other uploads from the same moment" /></div>
+      <figcaption>
+        Audio gets a waveform scrubber; video gets a poster frame. Every item links
+        back out to everyone else&rsquo;s uploads from the same moment.
+      </figcaption>
+    </figure>
+  </section>
+
+  <hr class="rule" />
+
+  <section>
+    <div class="rail" data-on="all"><i></i><i></i><i></i></div>
+    <span class="eyebrow">Once it&rsquo;s running</span>
+    <h2>Worth clicking, in this order</h2>
+    <ul class="path">
+      <li><span class="u">/</span><span>Start here. Four moment cards, then recent uploads.</span></li>
+      <li><span class="u">/m/aimee-mann/&hellip;</span><span>Your example. Five people, three media types, one page.</span></li>
+      <li><span class="u">/explore</span><span>Click &ldquo;Aimee Mann&rdquo; alone, then add the festival, then the date. Watch the count drop from 6 to 5 to 4.</span></li>
+      <li><span class="u">/upload</span><span>Log in first. Drop in a photo from your own phone &mdash; if the camera recorded a date, the field fills itself.</span></li>
+    </ul>
+
+    <div class="callout">
+      <strong>The real test:</strong> upload something of your own tagged
+      <em>Aimee Mann</em> / <em>Eau Claire Festival</em> / <em>July 24 2026</em>,
+      typed however you like &mdash; lowercase, extra spaces, doesn&rsquo;t matter.
+      It should land in that moment alongside the other five and bump the
+      count to six.
+    </div>
+  </section>
+
+  <section>
+    <div class="rail" data-on="all"><i></i><i></i><i></i></div>
+    <span class="eyebrow">The next step</span>
+    <h2>Putting it on the internet</h2>
+    <div class="prose" style="margin-top:.7rem">
+      <p class="muted">
+        Right now it stores everything in a file on your machine, which is what
+        makes it run with no setup. To put it somewhere other people can reach,
+        two things need to change: the database moves to Postgres, and uploaded
+        files move to object storage like S3 or Cloudflare R2.
+      </p>
+      <p class="muted" style="margin-top:.8rem">
+        Both already sit behind adapters, so that&rsquo;s a swap rather than a
+        rewrite &mdash; but it does mean signing up for a host and handing over
+        keys. Worth doing once you&rsquo;ve clicked around and know what you want
+        changed. I&rsquo;d also want moderation tooling in place before it&rsquo;s
+        genuinely public.
+      </p>
+    </div>
+  </section>
+
+</div>

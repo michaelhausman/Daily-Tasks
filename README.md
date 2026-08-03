@@ -120,7 +120,9 @@ Storage works the same way: local disk by default, any S3-compatible bucket when
 [`lib/storage/index.ts`](lib/storage/index.ts); nothing above those files knows
 which engine it's talking to.
 
-**To deploy this for real, see [DEPLOY.md](DEPLOY.md).**
+**To deploy this for real, see [DEPLOY.md](DEPLOY.md).** Other written material
+— the project paper, the deploy checklist, the app tour — is in
+[`docs/`](docs/README.md).
 
 ### ffmpeg is optional
 
