@@ -1,0 +1,694 @@
+<title>Tagpool — project paper</title>
+
+<style>
+  :root {
+    --paper:     #fbfaf7;
+    --ink:       #1c1a17;
+    --muted:     #6a655d;
+    --rule:      #e2ddd2;
+    --card:      #ffffff;
+    --card-2:    #f4f1ea;
+
+    --who:   #6f4ce8;
+    --where: #0d8f66;
+    --when:  #c4462f;
+
+    --serif: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, "Times New Roman", serif;
+    --sans:  ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    --mono:  ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --paper: #14131a; --ink: #ece9f2; --muted: #97919f;
+      --rule: #2d2a36; --card: #1c1a24; --card-2: #23202c;
+      --who: #9a7fff; --where: #2fbd8a; --when: #f2705a;
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper: #14131a; --ink: #ece9f2; --muted: #97919f;
+    --rule: #2d2a36; --card: #1c1a24; --card-2: #23202c;
+    --who: #9a7fff; --where: #2fbd8a; --when: #f2705a;
+  }
+  :root[data-theme="light"] {
+    --paper: #fbfaf7; --ink: #1c1a17; --muted: #6a655d;
+    --rule: #e2ddd2; --card: #ffffff; --card-2: #f4f1ea;
+    --who: #6f4ce8; --where: #0d8f66; --when: #c4462f;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--serif);
+    font-size: 17px;
+    line-height: 1.62;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .sheet {
+    max-width: 40rem;
+    margin: 0 auto;
+    padding: clamp(2.5rem, 6vw, 5.5rem) clamp(1.2rem, 5vw, 2rem) 7rem;
+  }
+
+  p { margin: 0 0 1.05rem; }
+  p:last-child { margin-bottom: 0; }
+
+  h1, h2, h3, .eyebrow, .label { font-family: var(--sans); text-wrap: balance; }
+
+  h1 {
+    margin: 0;
+    font-size: clamp(2.1rem, 6vw, 3rem);
+    line-height: 1.02;
+    letter-spacing: -.035em;
+    font-weight: 800;
+  }
+
+  h2 {
+    margin: 0 0 .9rem;
+    font-size: 1.28rem;
+    line-height: 1.2;
+    letter-spacing: -.018em;
+    font-weight: 750;
+  }
+
+  h3 {
+    margin: 1.8rem 0 .5rem;
+    font-size: .98rem;
+    letter-spacing: -.005em;
+    font-weight: 700;
+  }
+
+  a { color: var(--who); }
+  strong { font-weight: 700; }
+  em { font-style: italic; }
+
+  code {
+    font-family: var(--mono);
+    font-size: .82em;
+    background: var(--card-2);
+    border: 1px solid var(--rule);
+    border-radius: 4px;
+    padding: .08em .34em;
+  }
+
+  .eyebrow {
+    font-family: var(--mono);
+    font-size: .68rem;
+    letter-spacing: .16em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+
+  .lede {
+    font-size: 1.16rem;
+    line-height: 1.5;
+    color: var(--muted);
+    margin-top: 1.1rem;
+  }
+
+  /* Sections are numbered because the document is meant to be referred back
+     to in conversation, not read once top to bottom. */
+  section {
+    margin-top: clamp(2.8rem, 6vw, 4rem);
+    padding-top: 1.6rem;
+    border-top: 1px solid var(--rule);
+  }
+
+  section > .eyebrow { display: block; margin-bottom: .45rem; }
+
+  /* ---- the three facets, the one recurring visual device ---------------- */
+  .facets { display: grid; gap: .6rem; margin: 1.4rem 0; }
+  @media (min-width: 34rem) { .facets { grid-template-columns: repeat(3, 1fr); } }
+
+  .facet {
+    background: var(--card);
+    border: 1px solid var(--rule);
+    border-top: 2px solid var(--tone);
+    border-radius: 8px;
+    padding: .8rem .9rem;
+  }
+  .facet.who { --tone: var(--who); }
+  .facet.where { --tone: var(--where); }
+  .facet.when { --tone: var(--when); }
+  .facet .k {
+    font-family: var(--mono); font-size: .64rem; letter-spacing: .14em;
+    text-transform: uppercase; color: var(--tone); font-weight: 700;
+  }
+  .facet .v { font-family: var(--sans); font-weight: 650; margin-top: .2rem; font-size: .95rem; }
+
+  /* ---- pull quote / key claim ------------------------------------------ */
+  .claim {
+    margin: 1.5rem 0;
+    padding: 0 0 0 1.1rem;
+    border-left: 2px solid var(--who);
+    font-size: 1.08rem;
+    line-height: 1.5;
+  }
+
+  .note {
+    margin: 1.4rem 0;
+    padding: .9rem 1.05rem;
+    background: var(--card-2);
+    border: 1px solid var(--rule);
+    border-radius: 8px;
+    font-size: .93rem;
+    line-height: 1.55;
+  }
+  .note.flag { border-left: 2px solid var(--when); border-radius: 0 8px 8px 0; }
+
+  /* ---- figures ---------------------------------------------------------- */
+  .stats { display: grid; gap: .6rem; margin: 1.5rem 0; }
+  @media (min-width: 34rem) { .stats { grid-template-columns: repeat(3, 1fr); } }
+  .stat {
+    background: var(--card); border: 1px solid var(--rule);
+    border-radius: 8px; padding: .85rem .9rem;
+  }
+  .stat .n {
+    font-family: var(--sans); font-size: 1.5rem; font-weight: 800;
+    letter-spacing: -.03em; font-variant-numeric: tabular-nums; line-height: 1.1;
+  }
+  .stat .d { font-family: var(--sans); font-size: .78rem; color: var(--muted); margin-top: .25rem; line-height: 1.4; }
+
+  ul, ol { margin: 0 0 1.05rem; padding-left: 1.25rem; }
+  li { margin-bottom: .45rem; }
+  li:last-child { margin-bottom: 0; }
+
+  .scroll { overflow-x: auto; margin: 1.4rem 0; }
+  table { width: 100%; border-collapse: collapse; font-family: var(--sans); font-size: .87rem; }
+  th, td { text-align: left; padding: .55rem .65rem; border-bottom: 1px solid var(--rule); vertical-align: top; }
+  th { font-size: .68rem; text-transform: uppercase; letter-spacing: .1em; color: var(--muted); font-weight: 650; }
+
+  /* ---- placeholders the author must fill in ----------------------------- */
+  .fill {
+    font-family: var(--mono);
+    font-size: .82em;
+    background: color-mix(in srgb, var(--when) 14%, transparent);
+    border-bottom: 1px dashed var(--when);
+    padding: .05em .3em;
+    border-radius: 3px;
+  }
+
+  pre {
+    margin: 1.2rem 0; padding: .9rem 1rem; overflow-x: auto;
+    background: var(--card-2); border: 1px solid var(--rule);
+    border-radius: 8px; font-family: var(--mono); font-size: .78rem; line-height: 1.65;
+  }
+
+  footer {
+    margin-top: 4rem; padding-top: 1.4rem; border-top: 1px solid var(--rule);
+    font-family: var(--sans); font-size: .8rem; color: var(--muted);
+  }
+
+  :focus-visible { outline: 2px solid var(--who); outline-offset: 2px; border-radius: 3px; }
+
+  /* ---- print / PDF ------------------------------------------------------
+     Also used to generate the PDF, so this is the paper layout, not an
+     afterthought. Screen CSS straight to PDF orphans headings from their
+     text and splits tables across pages. */
+  @media print {
+    /* A dark PDF is unreadable on paper and ruinous to print, so the light
+       palette is pinned regardless of the reader's system setting. */
+    :root, :root[data-theme="dark"] {
+      --paper: #ffffff; --ink: #16140f; --muted: #55504a;
+      --rule: #d8d2c6; --card: #ffffff; --card-2: #f6f3ec;
+      --who: #5a3ad6; --where: #0a7a56; --when: #b03a24;
+    }
+
+    @page { size: letter; margin: 0.9in 0.85in; }
+
+    body { font-size: 10.5pt; line-height: 1.5; background: #fff; }
+    .sheet { max-width: none; padding: 0; }
+
+    /* Keep every colored rule and card fill — they carry the structure. */
+    * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+
+    /* Never strand a heading at the foot of a page. */
+    h1, h2, h3 { break-after: avoid-page; page-break-after: avoid; }
+    h2 { font-size: 13pt; }
+    h3 { font-size: 10.5pt; }
+
+    /* Never split a self-contained block across the fold. */
+    .facet, .stat, .note, .claim, tr, pre, .facets, .stats {
+      break-inside: avoid-page;
+      page-break-inside: avoid;
+    }
+
+    section {
+      margin-top: 1.6rem;
+      padding-top: 1rem;
+      break-inside: auto;
+    }
+
+    /* The appendix reads as a separate document; give it its own page. */
+    section:last-of-type { break-before: page; page-break-before: always; }
+
+    a { color: var(--ink); text-decoration: none; }
+    footer { break-inside: avoid-page; }
+  }
+</style>
+
+<div class="sheet">
+
+  <header>
+    <span class="eyebrow">Project paper · <span class="fill">[DATE]</span></span>
+    <h1 style="margin-top:.7rem">Tagpool</h1>
+    <p class="lede">
+      A place where everyone&rsquo;s photos, video, and audio from the same night
+      end up together — without anyone organising it.
+    </p>
+  </header>
+
+  <section>
+    <span class="eyebrow">01</span>
+    <h2>In one paragraph</h2>
+    <p>
+      When you photograph a concert, your pictures go into your phone and stay
+      there. So do everyone else&rsquo;s. Two thousand people were at that show
+      and they each hold a fragment of it, permanently separated. Tagpool asks
+      uploaders for three things — <strong>who</strong> was playing,
+      <strong>where</strong> it was, and <strong>when</strong> — and uses those
+      to pool everyone&rsquo;s media onto a single page for that night. Nobody
+      creates an event. Nobody invites anyone. Tagging the same place and date
+      as a stranger is what puts you in the same room as them.
+    </p>
+    <div class="facets">
+      <div class="facet who"><div class="k">Who</div><div class="v">Aimee Mann</div></div>
+      <div class="facet where"><div class="k">Where</div><div class="v">Eau Claire Festival</div></div>
+      <div class="facet when"><div class="k">When</div><div class="v">24 July 2026</div></div>
+    </div>
+    <p>
+      A working version is live today. It is a prototype with no users yet, and
+      this paper is candid about that.
+    </p>
+  </section>
+
+  <section>
+    <span class="eyebrow">02</span>
+    <h2>The problem</h2>
+    <p>
+      Live events generate enormous quantities of amateur media and almost no
+      shared memory. The footage exists — it&rsquo;s just scattered across
+      thousands of camera rolls with no way to find each other.
+    </p>
+    <p>
+      Where it does surface, it surfaces as broadcast. You post your clip to
+      Instagram, your followers see it, and it disappears down the feed. The
+      people it would mean most to — the other two thousand who were standing
+      there — never see it, because social platforms are organised around
+      <em>who you know</em>, not <em>where you were</em>.
+    </p>
+    <div class="claim">
+      The information needed to connect these people already exists in every
+      upload. Nobody collects it in a form that lets uploads find each other.
+    </div>
+    <p>
+      This gets worse with time. A photo of CBGB in 1975 is far more interesting
+      alongside forty others from the same year than it is alone, and there is
+      currently nowhere for it to go and find them.
+    </p>
+  </section>
+
+  <section>
+    <span class="eyebrow">03</span>
+    <h2>The insight</h2>
+    <p>
+      Tags on most platforms are decoration — free text, unlimited, used for
+      reach. Here they are <em>structure</em>, and three design decisions make
+      them work where hashtags don&rsquo;t.
+    </p>
+
+    <h3>Tags are typed, not freeform</h3>
+    <p>
+      Every tag is a performer, a place, or a topic. Namespacing means a venue
+      can&rsquo;t collide with a band of the same name, and it lets the browse
+      interface ask coherent questions: <em>everything from this place</em>,
+      <em>everything on this day</em>.
+    </p>
+
+    <h3>Identity is the normalized form, not what was typed</h3>
+    <p>
+      &ldquo;Aimee Mann&rdquo;, &ldquo;aimee mann&rdquo;, and &ldquo;AIMEE
+      MANN&rdquo; are one tag. Without this, pooling fails — and fails
+      <em>invisibly</em>, because each person sees their own upload sitting
+      alone and concludes nobody else posted. The system that looks like it has
+      no users and the system whose tags fragmented are indistinguishable from
+      the inside.
+    </p>
+
+    <h3>A moment is a place on a day</h3>
+    <p>
+      Not a performer, a place, and a day. The performer is optional, which
+      matters more than it sounds: a photo of an empty CBGB storefront has no
+      performer and would never pool with anything, and a festival with forty
+      bands would fracture into forty separate pages instead of one afternoon.
+      Performers live <em>inside</em> a moment as filters.
+    </p>
+    <div class="note">
+      Moments are never created by anyone. They are derived — the observation
+      that several people independently tagged the same place and the same date.
+      A moment comes into existence the instant the second person tags
+      correctly, and needs no organiser, no invitation, and no coordination.
+    </div>
+  </section>
+
+  <section>
+    <span class="eyebrow">04</span>
+    <h2>What exists today</h2>
+    <p>
+      There is a healthy category of event photo-sharing tools — DropEvent,
+      Kululu, GUESTPIX, Eventer and others. Every one of them works the same
+      way: <strong>an organiser creates an album and invites guests</strong>,
+      usually by QR code. They are built for weddings and corporate events,
+      where somebody is in charge and the guest list is known.
+    </p>
+    <p>
+      That model cannot serve the case here. Nobody is in charge of a Tuesday
+      night at a club. There is no guest list, no organiser, and no moment at
+      which two strangers agree to share an album.
+    </p>
+    <div class="scroll">
+      <table>
+        <thead>
+          <tr><th>Approach</th><th>How people connect</th><th>Gap</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Event album apps<br /><span style="color:var(--muted)">DropEvent, Kululu, GUESTPIX</span></td>
+            <td>An organiser invites guests</td>
+            <td>Requires somebody in charge and a known guest list</td>
+          </tr>
+          <tr>
+            <td>Instagram, TikTok</td>
+            <td>Followers</td>
+            <td>Organised by who you know, not where you were; content decays in hours</td>
+          </tr>
+          <tr>
+            <td>Google / Apple shared albums</td>
+            <td>You invite specific people</td>
+            <td>Private by construction; strangers can never join</td>
+          </tr>
+          <tr>
+            <td>Reddit, fan forums</td>
+            <td>Manual posting into threads</td>
+            <td>Text-first, no media structure, dies when the thread does</td>
+          </tr>
+          <tr>
+            <td><strong>Tagpool</strong></td>
+            <td><strong>Tagging the same place and date</strong></td>
+            <td><strong>Depends on people tagging accurately — the core risk</strong></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <p>
+      The wedge is narrow and specific: this is the only model where two people
+      who have never met, and never coordinated, end up in the same place
+      because they were at the same event.
+    </p>
+  </section>
+
+  <section>
+    <span class="eyebrow">05</span>
+    <h2>What is built</h2>
+    <p>
+      This is not a concept. A complete working product is deployed and running:
+    </p>
+    <ul>
+      <li><strong>Upload</strong> of photos, video, and audio, with thumbnails, video poster frames, and audio waveforms generated automatically</li>
+      <li><strong>Faceted tagging</strong> with type-ahead that steers people onto existing tags, and normalization underneath as a safety net</li>
+      <li><strong>Dates read from the photo itself</strong> where the camera recorded one, removing the field people are most likely to skip or mistype</li>
+      <li><strong>Automatic pooling</strong> into moment pages, with performer filters inside them</li>
+      <li><strong>Faceted browse</strong> — pick any combination of performer, place, date, and topic</li>
+      <li><strong>Likes, comments on both photos and whole moments, and following</strong> of tags and moments, with a personalised home feed</li>
+      <li><strong>Editing</strong> of tags and details after posting, without losing accumulated likes and comments</li>
+      <li><strong>Moderation</strong> — reporting, a review queue, reversible hiding, account suspension, and tag management</li>
+      <li><strong>Invite-gated signup</strong>, rate limiting, and published house rules and takedown process</li>
+    </ul>
+    <div class="note">
+      Built to be cheap to run and cheap to move. Storage and database both sit
+      behind adapters, so the path from a $5/month host to object storage and
+      managed Postgres is configuration rather than a rewrite.
+    </div>
+  </section>
+
+  <section>
+    <span class="eyebrow">06</span>
+    <h2>Why this could matter</h2>
+    <p>
+      Live music alone is enormous and growing. Live Nation — one company, not
+      the market — reported these figures for 2025:
+    </p>
+    <div class="stats">
+      <div class="stat"><div class="n">159M</div><div class="d">fans attending, up 5% year on year</div></div>
+      <div class="stat"><div class="n">55,000</div><div class="d">shows worldwide</div></div>
+      <div class="stat"><div class="n">$25.2B</div><div class="d">revenue, up 9%</div></div>
+    </div>
+    <p>
+      Nearly every one of those attendees carries a camera and uses it. The
+      media already exists; none of it is pooled. And concerts are only the
+      obvious case — the same structure fits festivals, protests, sports,
+      parades, and neighbourhoods over time.
+    </p>
+    <div class="note flag">
+      <strong>Be careful with this number.</strong> Attendance is not a market
+      size, and no investor should read it as one. It establishes that the
+      behaviour is widespread, nothing more. The honest position is that this is
+      an unproven consumer product in a large space, not a company with a
+      measurable addressable market.
+    </div>
+  </section>
+
+  <section>
+    <span class="eyebrow">07</span>
+    <h2>How it would grow</h2>
+    <p>
+      The mechanic is unusual and worth being precise about, because it is the
+      main argument for the idea:
+    </p>
+    <ol>
+      <li>Someone uploads a photo and tags it with a place and a date</li>
+      <li>They find other people&rsquo;s photos of the same night already there</li>
+      <li>They tell people who were with them — <em>there are photos from that show</em></li>
+      <li>Those people upload theirs, and the pool deepens</li>
+    </ol>
+    <p>
+      Every upload makes the corresponding moment more valuable to everyone else
+      who was there, which is a real network effect. But it is a network effect
+      with an unusually high floor: <strong>the first person to tag a night
+      finds nothing</strong>, and has no reason to come back. Solving that cold
+      start is the central product problem, not a growth detail.
+    </p>
+    <p>
+      The most likely first move is to seed narrowly — one scene, one venue, one
+      festival — so a newcomer's first search actually returns something.
+    </p>
+  </section>
+
+  <section>
+    <span class="eyebrow">08</span>
+    <h2>Money</h2>
+    <p>
+      There is no revenue today and no proven model. Being straight about that
+      is more useful than a projection. The plausible directions, roughly in
+      order of how natural they feel:
+    </p>
+    <ul>
+      <li><strong>Venues and festivals</strong> paying for a branded page for their events — the archive is marketing material they currently don&rsquo;t have</li>
+      <li><strong>Artists</strong> paying for an official pooled archive of a tour</li>
+      <li><strong>Subscriptions</strong> for heavy uploaders: original-quality storage, bulk upload, downloads</li>
+      <li><strong>Print and physical goods</strong> from a night you were at</li>
+    </ul>
+    <div class="claim">
+      None of this matters until pooling demonstrably works. A product where
+      strangers reliably find each other&rsquo;s photos has many ways to make
+      money; one where they don&rsquo;t has none.
+    </div>
+  </section>
+
+  <section>
+    <span class="eyebrow">09</span>
+    <h2>Where it actually stands</h2>
+    <div class="stats">
+      <div class="stat"><div class="n">Live</div><div class="d">deployed and publicly reachable</div></div>
+      <div class="stat"><div class="n">0</div><div class="d">users outside the builder</div></div>
+      <div class="stat"><div class="n">$0</div><div class="d">revenue, and no model tested</div></div>
+    </div>
+    <p>
+      The product is real and complete enough to use. Nothing about whether
+      people <em>will</em> use it has been tested. The immediate next step is
+      putting it in front of a small invited group and watching for one specific
+      thing: whether two people who don&rsquo;t know each other independently
+      tag the same night.
+    </p>
+    <p>
+      That single observation is worth more than any amount of further building.
+    </p>
+  </section>
+
+  <section>
+    <span class="eyebrow">10</span>
+    <h2>What could go wrong</h2>
+    <p>
+      Anyone considering putting money in deserves these stated plainly.
+    </p>
+
+    <h3>People may not tag accurately</h3>
+    <p>
+      The entire product rests on it. Normalization and type-ahead reduce the
+      problem but cannot solve indifference. If people tag lazily, uploads
+      don&rsquo;t pool, and the core promise silently fails. This is the risk
+      that matters most and it is not yet tested.
+    </p>
+
+    <h3>Cold start</h3>
+    <p>
+      An empty moment page gives a first visitor no reason to return. Every
+      pooling product faces this; many die of it.
+    </p>
+
+    <h3>Recordings carry real rights problems</h3>
+    <p>
+      A recording of a performance involves the performer, the songwriter, and
+      often the venue. Most artists do not permit taping. A site pooling
+      concert audio should expect takedown notices, and it has a takedown
+      process for that reason — but this is a genuine ongoing exposure, not a
+      theoretical one.
+    </p>
+
+    <h3>Moderation is a permanent cost</h3>
+    <p>
+      Any open media platform attracts material that must be removed. Tools
+      exist; the labour they imply does not go away, and it scales with success.
+    </p>
+
+    <h3>A large platform could copy the mechanic</h3>
+    <p>
+      Instagram could group by location and date tomorrow. The defence is not
+      technology — it is being the place people expect this to work, and the
+      archive that accumulates there.
+    </p>
+  </section>
+
+  <section>
+    <span class="eyebrow">11</span>
+    <h2>Who is building it</h2>
+    <p class="fill">
+      [YOUR BACKGROUND — what you have done before, why you specifically care
+      about live music and its documentation, and what makes you the person who
+      keeps going at this after the novelty wears off. For a friends-and-family
+      raise this is the section that actually does the work; people are backing
+      you, not a market analysis.]
+    </p>
+    <p class="fill">
+      [WHO ELSE IS INVOLVED, if anyone — collaborators, advisors, people who
+      have promised time. If it is only you, say so; that is a fact, not a
+      weakness, at this stage.]
+    </p>
+  </section>
+
+  <section>
+    <span class="eyebrow">12</span>
+    <h2>What I&rsquo;m asking for</h2>
+    <p class="fill">
+      [AMOUNT you are raising and the structure — for friends and family this is
+      commonly a SAFE or a simple convertible note. Get a lawyer to paper it
+      however small it is; informal money between people who care about you is
+      exactly where clarity is worth most.]
+    </p>
+    <p class="fill">
+      [WHAT IT BUYS — be concrete and modest. Hosting is a few hundred dollars a
+      year at this stage, so the money is really buying your time, and possibly
+      design or legal help. Say how many months of runway and what you intend to
+      have learned by the end of it.]
+    </p>
+    <div class="note flag">
+      <strong>The honest framing for this round.</strong> This is not a company
+      with traction seeking growth capital. It is a working product and a
+      specific bet, seeking enough runway to find out whether the bet is right.
+      Anyone putting money in should treat it as money they can afford to lose,
+      and you should say that to them out loud rather than leaving it implied.
+    </div>
+  </section>
+
+  <section>
+    <span class="eyebrow">Appendix</span>
+    <h2>How it works</h2>
+    <p>
+      For readers who want the mechanics. The interesting parts are all in how
+      tags are modelled — everything else is ordinary web software.
+    </p>
+
+    <h3>Tag identity</h3>
+    <p>
+      Every tag has a display label and a normalized slug. The slug is the
+      identity: case folded, whitespace collapsed, punctuation and accents
+      stripped. &ldquo;Aimee Mann&rdquo;, &ldquo;aimee mann&rdquo;, &ldquo;AIMEE
+      MANN&rdquo;, and &ldquo;Aimée&nbsp;&nbsp;Mann&rdquo; all resolve to
+      <code>aimee-mann</code>, so four people typing carelessly still land in
+      one pool. A uniqueness constraint on
+      <code>(facet,&nbsp;slug)</code> makes duplicates impossible rather than
+      merely unlikely.
+    </p>
+
+    <h3>Dates are a column, not a tag</h3>
+    <p>
+      This is the least obvious decision and the most important. As a tag,
+      &ldquo;July 24th&rdquo;, &ldquo;7/24&rdquo;, &ldquo;24 July 2026&rdquo;,
+      and &ldquo;2026-07-24&rdquo; are four separate values and a pool splits
+      four ways. As a real date column it is one value, it sorts, and it
+      supports range queries a tag never could. The interface still shows it as
+      a chip beside the others, so the distinction is invisible to users.
+    </p>
+
+    <h3>Moments are derived</h3>
+    <p>
+      No moment is ever stored. The moment page for a place and a date is a
+      grouped query across uploads carrying that place tag and that date:
+    </p>
+    <pre>GROUP BY where_tag, event_date</pre>
+    <p>
+      The consequence is that a moment exists the instant the second person tags
+      correctly — no backfill, no event records to maintain, and no state to
+      keep in sync. Correcting a mistagged date silently relocates a photo into
+      the right moment with nothing to migrate.
+    </p>
+
+    <h3>Filtering</h3>
+    <p>
+      <em>Or</em> within a facet, <em>and</em> across facets. Two performers
+      means either performer; a performer plus a venue plus a date means all
+      three. Selecting a performer alone returns everything of theirs; adding
+      the venue and date narrows to one show. The progressive narrowing that
+      makes browse feel navigable falls out of that single rule.
+    </p>
+
+    <h3>Stack</h3>
+    <p>
+      Next.js and Postgres, with images processed on upload and ffmpeg
+      generating video poster frames and audio waveforms. Media storage sits
+      behind an interface with local-disk and S3-compatible implementations, so
+      moving to Cloudflare R2 — which charges nothing for bandwidth, the cost
+      that dominates a video site — is an environment variable rather than a
+      migration. Development runs against an embedded Postgres, so a new
+      contributor needs no database installed and no accounts.
+    </p>
+  </section>
+
+  <footer>
+    <p>
+      Tagpool · <span class="fill">[YOUR NAME]</span> ·
+      <span class="fill">[EMAIL]</span> ·
+      <span class="fill">[LIVE URL]</span>
+    </p>
+    <p style="margin-top:.5rem">
+      Live Nation 2025 figures from the company&rsquo;s reported full-year
+      results. Everything stated about the product&rsquo;s status is current as
+      of the date above and describes a prototype with no users.
+    </p>
+  </footer>
+
+</div>
