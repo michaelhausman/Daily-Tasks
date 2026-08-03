@@ -8,6 +8,7 @@ Everything written about the project, as opposed to the code itself.
 | `deploy-checklist.html` | Eight-step Railway deployment checklist with tickable boxes. |
 | `app-tour.html` | Visual tour of the app with embedded screenshots. **See the note below.** |
 | `app-tour.template.html` | The tour before screenshots were inlined. Kept because the built file is 256KB of base64 and unpleasant to edit by hand. |
+| [`feedback/`](feedback/README.md) | What outside readers actually said, verbatim, triaged against what exists. Check it before starting a change. |
 
 The two other documents live in the repo root because that's where people look
 for them: [`README.md`](../README.md) for how the project works, and
