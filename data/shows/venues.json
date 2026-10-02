@@ -1,0 +1,13 @@
+{
+ "about": "Decisions about venue names that differ between sources but may be one place. `names` are spellings of the same room in that city; `different` marks two places that happen to share a night. Read by `npm run fetch:setlistfm`.",
+ "decisions": [
+  {"city": "Albany", "names": ["Kitty Carlisle Hart Theatre", "Hart Theatre: Empire State Plaza Performing Arts Center, \"The Egg\"", "The Egg Center for the Performing Arts"], "note": "The Hart Theatre is inside The Egg."},
+  {"city": "South Orange", "names": ["South Orange Performing Arts Center", "SOPAC"]},
+  {"city": "Brooklyn", "names": ["Prospect Park Bandshell", "BRIC Celebrate Brooklyn! Festival"], "note": "Celebrate Brooklyn! is held at the Prospect Park Bandshell."},
+  {"city": "New York", "names": ["Guggenheim Bandshell", "Damrosch Park Bandshell"], "note": "The Guggenheim Bandshell is in Damrosch Park."},
+  {"city": "Cincinnati", "names": ["The Annie W. and Elizabeth M. Anderson Theater", "Memorial Hall"], "note": "The Anderson Theater is Memorial Hall's theatre."},
+  {"city": "South Deerfield", "names": ["Tree House Brewing Company - Deerfield", "Treehouse Brewing Co."]},
+  {"city": "Haddon Heights", "names": ["Norcross-McLaughlin Memorial Dell", "Sundown Music Series"], "note": "The Sundown series is held at the Dell. Assumed, not confirmed."},
+  {"city": "Boston", "date": "2012-11-03", "names": ["The Wilbur Theatre", "Berklee Performance Center"], "different": true, "note": "Two venues; treated as separate shows that night."}
+ ]
+}

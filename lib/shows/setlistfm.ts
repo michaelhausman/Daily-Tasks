@@ -181,3 +181,107 @@ export function mergeSameShow(rows: ShowInput[]): ShowInput[] {
     (a, b) => a.date.localeCompare(b.date) || (a.venue ?? "").localeCompare(b.venue ?? ""),
   );
 }
+
+/** Venue name reduced to what survives spelling differences between sources. */
+function venueKey(name: string): string {
+  return name
+    .normalize("NFKD")
+    .replace(/\p{M}+/gu, "")
+    .toLowerCase()
+    .replace(/\btheatre\b/g, "theater")
+    .replace(/&/g, " and ")
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\b(the|and)\b/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/**
+ * A person's call on two names in one city: the same room (`names` lists every
+ * spelling), or — with `different` — two places that happen to share a night.
+ * Kept in data/shows/venues.json so a re-fetch doesn't ask again.
+ */
+export type VenueDecision = {
+  city: string;
+  names: string[];
+  /** Limit the decision to one night, when the names only coincide then. */
+  date?: string;
+  different?: boolean;
+  note?: string;
+};
+
+export type VenueAlignment = {
+  aligned: Array<{ date: string; from: string; to: string }>;
+  /** Same city and day as a show already on file, under a name too different to match safely. */
+  unresolved: Array<{ date: string; city: string; ours: string; theirs: string[] }>;
+};
+
+/**
+ * Line up venue names with shows already on file, so a night two artists
+ * shared is one moment rather than two pages a slightly different spelling
+ * apart: "Birchmere" against "The Birchmere", "McGlohon Theater" against
+ * "McGlohon Theatre".
+ *
+ * Only on the same day in the same city, and only when the names agree once
+ * articles, punctuation and theatre/theater are set aside, or one contains the
+ * other. The spelling already on file wins, since that is the moment people
+ * may have posted to. Anything less certain is reported rather than guessed:
+ * a different name in the same city on the same night can be a different show.
+ */
+export function alignVenues(
+  rows: ShowInput[],
+  existing: ShowInput[],
+  /** Decisions a person made about names too different to match on their own. */
+  sameVenue: VenueDecision[] = [],
+): {
+  rows: ShowInput[];
+  report: VenueAlignment;
+} {
+  const onFile = new Map<string, string[]>();
+  for (const s of existing) {
+    if (!s.venue) continue;
+    const k = `${s.date}|${s.city.toLowerCase()}`;
+    const list = onFile.get(k) ?? [];
+    if (!list.includes(s.venue)) list.push(s.venue);
+    onFile.set(k, list);
+  }
+
+  const report: VenueAlignment = { aligned: [], unresolved: [] };
+  const out = rows.map((row) => {
+    if (!row.venue) return row;
+    const candidates = onFile.get(`${row.date}|${row.city.toLowerCase()}`);
+    if (!candidates || candidates.includes(row.venue)) return row;
+
+    const decided = sameVenue.find(
+      (d) =>
+        d.city.toLowerCase() === row.city.toLowerCase() &&
+        d.names.includes(row.venue!) &&
+        (!d.date || d.date === row.date),
+    );
+    // A night someone marked as two different places is left exactly as is.
+    if (decided?.different) return row;
+    const decidedMatch = decided && candidates.find((c) => decided.names.includes(c));
+    if (decidedMatch) {
+      report.aligned.push({ date: row.date, from: row.venue, to: decidedMatch });
+      return { ...row, venue: decidedMatch };
+    }
+
+    const ours = venueKey(row.venue);
+    const match = candidates.filter((c) => {
+      const theirs = venueKey(c);
+      if (theirs === ours) return true;
+      // Containment only for names long enough that it isn't a coincidence.
+      const [short, long] = theirs.length < ours.length ? [theirs, ours] : [ours, theirs];
+      return short.length >= 8 && ` ${long} `.includes(` ${short} `);
+    });
+
+    if (match.length === 1) {
+      report.aligned.push({ date: row.date, from: row.venue, to: match[0] });
+      return { ...row, venue: match[0] };
+    }
+    report.unresolved.push({ date: row.date, city: row.city, ours: row.venue, theirs: candidates });
+    return row;
+  });
+
+  return { rows: out, report };
+}

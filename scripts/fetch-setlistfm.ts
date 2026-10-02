@@ -15,11 +15,14 @@ import fs from "node:fs";
 import path from "node:path";
 
 import {
+  alignVenues,
+  type VenueDecision,
   fetchSetlists,
   findArtist,
   mergeSameShow,
   toShowInput,
 } from "../lib/shows/setlistfm";
+import type { ShowInput } from "../lib/shows/service";
 import { slugify } from "../lib/tags/normalize";
 
 async function main() {
@@ -72,10 +75,25 @@ async function main() {
   process.stdout.write("\n");
 
   const usable = setlists.map(toShowInput).filter((s) => s !== null);
-  const shows = mergeSameShow(usable);
+  const file = path.join("data", "shows", `${slugify(artist.name)}.json`);
+
+  // Every other artist already on file, so shared nights land on one moment.
+  const dir = path.dirname(file);
+  const existing = fs.existsSync(dir)
+    ? fs
+        .readdirSync(dir)
+        .filter((f) => f.endsWith(".json") && f !== "venues.json" && path.join(dir, f) !== file)
+        .flatMap((f) => (JSON.parse(fs.readFileSync(path.join(dir, f), "utf8")).shows ?? []) as ShowInput[])
+    : [];
+  const decisionsFile = path.join(dir, "venues.json");
+  const decisions: VenueDecision[] = fs.existsSync(decisionsFile)
+    ? JSON.parse(fs.readFileSync(decisionsFile, "utf8")).decisions ?? []
+    : [];
+
+  const { rows: aligned, report } = alignVenues(usable, existing, decisions);
+  const shows = mergeSameShow(aligned);
   const withSongs = shows.filter((s) => s.setlist?.length).length;
 
-  const file = path.join("data", "shows", `${slugify(artist.name)}.json`);
   fs.mkdirSync(path.dirname(file), { recursive: true });
   fs.writeFileSync(
     file,
@@ -96,6 +114,19 @@ async function main() {
   );
   if (setlists.length - usable.length > 0) {
     console.log(`Skipped ${setlists.length - usable.length} with no date or city.`);
+  }
+  if (report.aligned.length > 0) {
+    console.log(`Matched ${report.aligned.length} venue spellings to shows already on file.`);
+  }
+  if (report.unresolved.length > 0) {
+    console.log(
+      `\n${report.unresolved.length} nights share a city and date with a show on file under a different venue name.`,
+    );
+    console.log("If any are the same place, record it in data/shows/venues.json and re-run:");
+    for (const u of report.unresolved) {
+      console.log(`  ${u.date}  ${u.city}: "${u.ours}" vs ${u.theirs.map((t) => `"${t}"`).join(", ")}`);
+    }
+    console.log("");
   }
   console.log(`Wrote ${file}. Load it with: npm run import:shows -- ${file}`);
 }
