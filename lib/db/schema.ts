@@ -295,6 +295,51 @@ export const momentFollows = pgTable(
   ],
 );
 
+/**
+ * A show that is known to have happened, whether or not anyone has posted from
+ * it yet: a performer at a place on a day, imported from a touring history.
+ *
+ * This is the one exception to "moments are derived". A moment born from
+ * uploads needs a second person to tag correctly before it exists, and the
+ * first person to arrive finds nothing — the cold start the whole product
+ * stands or falls on. A show row lets a moment exist *before* its first upload,
+ * so that person lands on a page that already knows who played and what was in
+ * the setlist, and their upload has somewhere to go.
+ *
+ * Shows reference tags rather than storing labels, so they pool with uploads
+ * by exactly the same (where slug, date) rule and follow tag merges.
+ */
+export const shows = pgTable(
+  "shows",
+  {
+    id: text("id").primaryKey(),
+    whoTagId: text("who_tag_id")
+      .notNull()
+      .references(() => tags.id, { onDelete: "cascade" }),
+    whereTagId: text("where_tag_id")
+      .notNull()
+      .references(() => tags.id, { onDelete: "cascade" }),
+    eventDate: date("event_date", { mode: "string" }).notNull(),
+    city: text("city"),
+    region: text("region"),
+    tour: text("tour"),
+    /** Song titles in running order, as JSON — same convention as waveformJson. */
+    setlistJson: text("setlist_json"),
+    setlistUrl: text("setlist_url"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("shows_who_where_date_unique").on(
+      t.whoTagId,
+      t.whereTagId,
+      t.eventDate,
+    ),
+    index("shows_where_date_idx").on(t.whereTagId, t.eventDate),
+  ],
+);
+
 export const REPORT_REASONS = [
   "copyright",
   "abuse",
@@ -355,3 +400,4 @@ export type Media = typeof media.$inferSelect;
 export type Tag = typeof tags.$inferSelect;
 export type Comment = typeof comments.$inferSelect;
 export type Report = typeof reports.$inferSelect;
+export type Show = typeof shows.$inferSelect;

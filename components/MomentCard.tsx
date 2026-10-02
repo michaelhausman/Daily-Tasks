@@ -86,11 +86,20 @@ export function MomentCard({
           </p>
         )}
 
+        {moment.tour && <p className="text-xs muted">{moment.tour}</p>}
+
         <p className="text-xs muted">
-          {moment.mediaCount} {moment.mediaCount === 1 ? "upload" : "uploads"}
-          {" · "}
-          {moment.contributorCount}{" "}
-          {moment.contributorCount === 1 ? "person" : "people"}
+          {moment.mediaCount === 0 ? (
+            "No uploads yet — were you there?"
+          ) : (
+            <>
+              {moment.mediaCount}{" "}
+              {moment.mediaCount === 1 ? "upload" : "uploads"}
+              {" · "}
+              {moment.contributorCount}{" "}
+              {moment.contributorCount === 1 ? "person" : "people"}
+            </>
+          )}
           {commentCount > 0 &&
             ` · ${commentCount} ${commentCount === 1 ? "comment" : "comments"}`}
         </p>

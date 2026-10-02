@@ -12,6 +12,7 @@
     "lint": "next lint",
     "db:migrate": "tsx scripts/migrate.ts",
     "seed": "tsx scripts/seed.ts",
+    "import:shows": "tsx scripts/import-shows.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

@@ -9,6 +9,7 @@ import { ReportButton } from "@/components/ReportButton";
 import { getCurrentUser } from "@/lib/auth/session";
 import { isAdmin } from "@/lib/config";
 import { findMedia, findMoments } from "@/lib/media/queries";
+import { findShowsAt } from "@/lib/shows/service";
 import {
   isFollowingMoment,
   likeStateFor,
@@ -42,18 +43,19 @@ export default async function MomentPage({
   const whoFilter =
     typeof rawWho === "string" && isValidSlug(rawWho) ? rawWho : null;
 
-  const [items, moments, comments, following] = await Promise.all([
+  const [items, moments, comments, following, shows] = await Promise.all([
     findMedia(
       { who: whoFilter ? [whoFilter] : [], where: [where], topic: [], dates: [date] },
       { limit: 200, viewerId: user?.id },
     ),
-    findMoments({ where, eventDate: date, limit: 1 }),
+    findMoments({ where, eventDate: date, limit: 1, includeEmpty: true }),
     listComments({ kind: "moment", whereSlug: where, eventDate: date }),
     user ? isFollowingMoment(user.id, where, date) : Promise.resolve(false),
+    findShowsAt(where, date),
   ]);
 
   const moment = moments[0];
-  if (!moment && items.length === 0) notFound();
+  if (!moment && items.length === 0 && shows.length === 0) notFound();
 
   const whereLabel = moment?.where.label ?? where;
   const performers = moment?.performers ?? [];
@@ -69,8 +71,12 @@ export default async function MomentPage({
     audio: items.filter((i) => i.kind === "audio").length,
   };
 
-  // Performer chips need slugs for links; derive from the items on the page.
+  // Performer chips need slugs for links. Billed performers come first and carry
+  // their real slugs; the rest are derived from the items on the page.
   const performerTags = new Map<string, string>();
+  for (const show of shows) {
+    performerTags.set(show.performer.slug, show.performer.label);
+  }
   for (const item of items) {
     for (const t of item.tags) {
       if (t.facet === "who") performerTags.set(t.slug, t.label);
@@ -86,13 +92,31 @@ export default async function MomentPage({
     }
   }
 
+  // "Add your photos" opens the upload form already tagged for this moment, so
+  // the person who was there doesn't have to retype a venue and risk a sibling
+  // tag that splits the pool.
+  const uploadParams = new URLSearchParams({ where: whereLabel, date });
+  const billed =
+    (whoFilter && performerTags.get(whoFilter)) ?? shows[0]?.performer.label;
+  if (billed) uploadParams.set("who", billed);
+  const uploadHref = `/upload?${uploadParams.toString()}`;
+
+  const place = shows.find((s) => s.city);
+  const tours = [...new Set(shows.map((s) => s.tour).filter(Boolean))];
+
   return (
     <div className="space-y-6">
       <header className="surface rounded-2xl p-5 sm:p-7">
         <p className="mb-2 text-xs uppercase tracking-wider muted">Moment</p>
 
         <h1 className="text-2xl font-bold sm:text-3xl">{whereLabel}</h1>
-        <p className="mt-1 text-sm muted">{formatEventDate(date)}</p>
+        <p className="mt-1 text-sm muted">
+          {formatEventDate(date)}
+          {place &&
+            !whereLabel.endsWith(place.city ?? "") &&
+            ` · ${place.city}${place.region ? `, ${place.region}` : ""}`}
+          {tours.length > 0 && ` · ${tours.join(", ")}`}
+        </p>
 
         <div className="mt-4 flex flex-wrap gap-2">
           <Chip facet="where" label={whereLabel} href={`/explore?where=${where}`} />
@@ -130,6 +154,11 @@ export default async function MomentPage({
           </div>
         )}
 
+        {items.length === 0 ? (
+          <p className="mt-4 text-sm muted">
+            Nobody has posted from this show yet.
+          </p>
+        ) : (
         <p className="mt-4 text-sm muted">
           {items.length} {items.length === 1 ? "upload" : "uploads"} from{" "}
           {contributors.length}{" "}
@@ -143,6 +172,7 @@ export default async function MomentPage({
             .filter(Boolean)
             .join(", ")}
         </p>
+        )}
 
         <div className="mt-3 flex flex-wrap gap-x-3 gap-y-1 text-sm">
           {contributors.map((handle) => (
@@ -170,12 +200,58 @@ export default async function MomentPage({
         </div>
       </header>
 
-      <MediaGrid items={items} likes={likes} loggedIn={Boolean(user)} />
+      {shows.some((s) => s.setlist.length > 0 || s.setlistUrl) && (
+        <section className="surface space-y-6 rounded-2xl p-5 sm:p-7">
+          {shows.map((show) => (
+            <div key={show.id}>
+              <p className="mb-2 text-xs uppercase tracking-wider muted">
+                Setlist{shows.length > 1 ? ` — ${show.performer.label}` : ""}
+              </p>
+              {show.setlist.length > 0 ? (
+                <ol className="list-decimal space-y-0.5 pl-6 text-sm sm:columns-2 sm:gap-8">
+                  {show.setlist.map((song, i) => (
+                    <li key={`${i}-${song}`}>{song}</li>
+                  ))}
+                </ol>
+              ) : (
+                <p className="text-sm muted">Not recorded.</p>
+              )}
+              {show.setlistUrl && (
+                <p className="mt-3 text-xs">
+                  <a
+                    href={show.setlistUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{ color: "#7c5cff" }}
+                  >
+                    On setlist.fm →
+                  </a>
+                </p>
+              )}
+            </div>
+          ))}
+        </section>
+      )}
+
+      {items.length === 0 && shows.length > 0 ? (
+        <div className="surface rounded-xl p-10 text-center">
+          <p className="font-semibold">Be the first to post from this show.</p>
+          <p className="mt-1 text-sm muted">
+            Photos, video, or a recording — it&apos;ll be tagged for this night
+            so everyone else who was there can find it.
+          </p>
+          <Link href={uploadHref} className="btn btn-primary mt-4 inline-block">
+            Add yours
+          </Link>
+        </div>
+      ) : (
+        <MediaGrid items={items} likes={likes} loggedIn={Boolean(user)} />
+      )}
 
       <div className="flex flex-wrap items-center justify-center gap-4 text-sm">
         <p className="muted">
           Were you there too?{" "}
-          <Link href="/upload" style={{ color: "#7c5cff" }}>
+          <Link href={uploadHref} style={{ color: "#7c5cff" }}>
             Add your photos
           </Link>
           .

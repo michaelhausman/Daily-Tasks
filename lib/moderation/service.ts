@@ -11,6 +11,7 @@ import {
   type ReportReason,
 } from "@/lib/db/schema";
 import { newId } from "@/lib/ids";
+import { repointShows } from "@/lib/shows/service";
 import { slugify } from "@/lib/tags/normalize";
 import { bumpUsage } from "@/lib/tags/service";
 
@@ -338,6 +339,7 @@ export async function mergeTags(
   }
 
   await db.delete(mediaTags).where(eq(mediaTags.tagId, fromId));
+  await repointShows(fromId, intoId);
   await db
     .update(tags)
     .set({ canonicalTagId: intoId, usageCount: 0 })
@@ -349,7 +351,9 @@ export async function mergeTags(
 }
 
 export async function deleteTag(tagId: string): Promise<void> {
-  // media_tags rows cascade; the uploads themselves are untouched.
+  // media_tags rows cascade; the uploads themselves are untouched. Shows filed
+  // under the tag cascade too — a show with no performer or no place is no
+  // longer a moment anyone can find.
   await db.delete(tags).where(eq(tags.id, tagId));
 }
 

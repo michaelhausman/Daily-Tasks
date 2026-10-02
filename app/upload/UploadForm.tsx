@@ -7,16 +7,21 @@ import { TagInput } from "@/components/TagInput";
 
 type Stage = "idle" | "uploading" | "done" | "error";
 
-export function UploadForm() {
+/** Tags carried in from a moment page's "Add yours" link. */
+export type UploadPrefill = { who?: string; where?: string; date?: string };
+
+export function UploadForm({ prefill = {} }: { prefill?: UploadPrefill }) {
   const router = useRouter();
   const inputRef = useRef<HTMLInputElement>(null);
 
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
-  const [who, setWho] = useState<string[]>([]);
-  const [where, setWhere] = useState<string[]>([]);
+  const [who, setWho] = useState<string[]>(prefill.who ? [prefill.who] : []);
+  const [where, setWhere] = useState<string[]>(
+    prefill.where ? [prefill.where] : [],
+  );
   const [topic, setTopic] = useState<string[]>([]);
-  const [eventDate, setEventDate] = useState("");
+  const [eventDate, setEventDate] = useState(prefill.date ?? "");
   const [caption, setCaption] = useState("");
   const [visibility, setVisibility] = useState("public");
   const [stage, setStage] = useState<Stage>("idle");

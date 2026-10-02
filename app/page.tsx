@@ -38,7 +38,7 @@ export default async function HomePage() {
   const [followedMoments, followedMediaIds] = user
     ? await Promise.all([
         myMomentKeys.length > 0
-          ? findMoments({ keys: myMomentKeys, limit: 6 })
+          ? findMoments({ keys: myMomentKeys, limit: 6, includeEmpty: true })
           : Promise.resolve([]),
         myTags.length > 0
           ? mediaFromFollowedTags(user.id, 8)

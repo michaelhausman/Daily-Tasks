@@ -219,10 +219,12 @@ type MomentRow = {
   event_date: string | Date;
   media_count: string | number;
   contributor_count: string | number;
-  last_upload: string | Date;
+  last_upload: string | Date | null;
   preview_keys: string[] | null;
   kinds: string[] | null;
   performers: string[] | null;
+  tour: string | null;
+  is_show: boolean;
 };
 
 export type Moment = {
@@ -230,16 +232,20 @@ export type Moment = {
   eventDate: string;
   mediaCount: number;
   contributorCount: number;
-  lastUpload: number;
+  /** Epoch ms of the newest upload, or null for a show nobody has posted from. */
+  lastUpload: number | null;
   previewKeys: string[];
   kinds: string[];
   /** Who-tag labels present in this moment, for the "featuring" line. */
   performers: string[];
+  /** Set when the moment is a known show, from the imported touring history. */
+  tour: string | null;
+  isShow: boolean;
 };
 
 /**
  * A Moment is a place on a day: CBGB on 12 June 1970, the Eau Claire festival
- * on 24 July 2026. Nobody creates one — it's the observation that people
+ * on 24 July 2026. Usually nobody creates one — it's the observation that people
  * independently tagged uploads with the same venue and the same date, so those
  * uploads are pictures of one occasion and belong on one page.
  *
@@ -253,74 +259,184 @@ export type Moment = {
  * Deriving it from a GROUP BY instead of storing it means a moment springs into
  * existence the instant the second person tags correctly, with no backfill and
  * nothing to keep in sync.
+ *
+ * The exception is a known show (see `shows` in schema.ts), which is a moment
+ * before anyone has posted. Both sources key on the same (where slug, date), so
+ * a show and the uploads from it are one moment, joined rather than duplicated.
+ * Empty shows are left out unless `includeEmpty` asks for them: there are
+ * hundreds, and a home page of empty cards would bury the moments people have
+ * actually filled.
  */
 export async function findMoments(
   opts: {
     limit?: number;
     where?: string;
     eventDate?: string;
+    /** Performer slugs; a moment matches if any upload or show in it has one. */
+    who?: string[];
     minMedia?: number;
+    /** Also return known shows that have no uploads yet. */
+    includeEmpty?: boolean;
+    /** Newest upload first (the default), or most recent show date first. */
+    orderBy?: "activity" | "date";
     /** Restrict to these (whereSlug, date) pairs — used by the following feed. */
     keys?: Array<{ whereSlug: string; eventDate: string }>;
   } = {},
 ): Promise<Moment[]> {
-  const { limit = 24, where, eventDate, minMedia = 1, keys } = opts;
+  const {
+    limit = 24,
+    where,
+    eventDate,
+    who,
+    minMedia = 1,
+    includeEmpty = false,
+    orderBy = "activity",
+    keys,
+  } = opts;
 
   if (keys && keys.length === 0) return [];
 
-  const conditions: SQL[] = [
+  // The same place/day narrowing applies to both sources, and is pushed inside
+  // each CTE so neither aggregates rows the outer filter would throw away.
+  function keyConditions(slug: SQL, day: SQL): SQL[] {
+    const out: SQL[] = [];
+    if (where) out.push(sql`${slug} = ${where}`);
+    if (eventDate) out.push(sql`${day} = ${eventDate}`);
+    if (keys) {
+      out.push(
+        sql`(${sql.join(
+          keys.map((k) => sql`(${slug} = ${k.whereSlug} AND ${day} = ${k.eventDate})`),
+          sql` OR `,
+        )})`,
+      );
+    }
+    return out;
+  }
+
+  const pooledConditions: SQL[] = [
     sql`m.status = 'ready'`,
     sql`m.visibility = 'public'`,
     sql`m.hidden_at IS NULL`,
     sql`m.event_date IS NOT NULL`,
+    ...keyConditions(sql`rt.slug`, sql`m.event_date`),
   ];
-  if (where) conditions.push(sql`rt.slug = ${where}`);
-  if (eventDate) conditions.push(sql`m.event_date = ${eventDate}`);
-  if (keys) {
-    conditions.push(
-      sql`(${sql.join(
-        keys.map(
-          (k) => sql`(rt.slug = ${k.whereSlug} AND m.event_date = ${k.eventDate})`,
-        ),
-        sql` OR `,
-      )})`,
+  const bookedConditions: SQL[] = [
+    sql`1 = 1`,
+    ...keyConditions(sql`wt.slug`, sql`s.event_date`),
+  ];
+
+  const outer: SQL[] = [
+    includeEmpty
+      ? sql`(mo.media_count >= ${minMedia} OR mo.is_show)`
+      : sql`mo.media_count >= ${minMedia}`,
+  ];
+  if (who && who.length > 0) {
+    const slugs = sql.join(
+      who.map((w) => sql`${w}`),
+      sql`, `,
     );
+    outer.push(sql`(
+      EXISTS (
+        SELECT 1 FROM media m3
+          INNER JOIN media_tags mt3  ON mt3.media_id = m3.id
+          INNER JOIN tags t3         ON t3.id = mt3.tag_id AND t3.facet = 'who'
+          INNER JOIN media_tags rmt3 ON rmt3.media_id = m3.id
+          INNER JOIN tags rt3        ON rt3.id = rmt3.tag_id AND rt3.facet = 'where'
+        WHERE m3.status = 'ready' AND m3.visibility = 'public' AND m3.hidden_at IS NULL
+          AND rt3.slug = mo.where_slug AND m3.event_date = mo.event_date
+          AND t3.slug IN (${slugs})
+      )
+      OR EXISTS (
+        SELECT 1 FROM shows s3
+          INNER JOIN tags pt3 ON pt3.id = s3.who_tag_id
+          INNER JOIN tags wt3 ON wt3.id = s3.where_tag_id
+        WHERE wt3.slug = mo.where_slug AND s3.event_date = mo.event_date
+          AND pt3.slug IN (${slugs})
+      )
+    )`);
   }
 
+  const order =
+    orderBy === "date"
+      ? sql`mo.event_date DESC`
+      : sql`mo.last_upload DESC NULLS LAST, mo.event_date DESC`;
+
   const result = await db.execute(sql`
+    WITH pooled AS (
+      SELECT
+        rt.slug  AS where_slug,
+        rt.label AS where_label,
+        m.event_date AS event_date,
+        COUNT(DISTINCT m.id)       AS media_count,
+        COUNT(DISTINCT m.owner_id) AS contributor_count,
+        MAX(m.created_at)          AS last_upload,
+        ARRAY_AGG(DISTINCT m.thumb_key) FILTER (WHERE m.thumb_key IS NOT NULL)
+          AS preview_keys,
+        ARRAY_AGG(DISTINCT m.kind) AS kinds
+      FROM media m
+        INNER JOIN media_tags rmt ON rmt.media_id = m.id
+        INNER JOIN tags rt        ON rt.id = rmt.tag_id AND rt.facet = 'where'
+      WHERE ${sql.join(pooledConditions, sql` AND `)}
+      GROUP BY rt.slug, rt.label, m.event_date
+    ),
+    booked AS (
+      SELECT
+        wt.slug  AS where_slug,
+        wt.label AS where_label,
+        s.event_date AS event_date,
+        MIN(s.tour) AS tour
+      FROM shows s
+        INNER JOIN tags wt ON wt.id = s.where_tag_id
+      WHERE ${sql.join(bookedConditions, sql` AND `)}
+      GROUP BY wt.slug, wt.label, s.event_date
+    ),
+    mo AS (
+      SELECT
+        COALESCE(p.where_slug, b.where_slug)   AS where_slug,
+        COALESCE(p.where_label, b.where_label) AS where_label,
+        COALESCE(p.event_date, b.event_date)   AS event_date,
+        COALESCE(p.media_count, 0)       AS media_count,
+        COALESCE(p.contributor_count, 0) AS contributor_count,
+        p.last_upload,
+        p.preview_keys,
+        p.kinds,
+        b.tour,
+        (b.where_slug IS NOT NULL) AS is_show
+      FROM pooled p
+        FULL OUTER JOIN booked b
+          ON b.where_slug = p.where_slug AND b.event_date = p.event_date
+    )
     SELECT
-      rt.slug  AS where_slug,
-      rt.label AS where_label,
-      m.event_date AS event_date,
-      COUNT(DISTINCT m.id)       AS media_count,
-      COUNT(DISTINCT m.owner_id) AS contributor_count,
-      MAX(m.created_at)          AS last_upload,
-      ARRAY_AGG(DISTINCT m.thumb_key) FILTER (WHERE m.thumb_key IS NOT NULL)
-        AS preview_keys,
-      ARRAY_AGG(DISTINCT m.kind) AS kinds,
+      mo.*,
       -- Performers are a property of the moment's contents, not its identity,
       -- so they're gathered with a correlated subquery rather than a join that
-      -- would multiply the grouped rows.
+      -- would multiply the grouped rows: whoever was tagged in an upload, plus
+      -- whoever the show was billed to.
       (
-        SELECT ARRAY_AGG(DISTINCT t2.label)
-        FROM media m2
-          INNER JOIN media_tags mt2 ON mt2.media_id = m2.id
-          INNER JOIN tags t2        ON t2.id = mt2.tag_id AND t2.facet = 'who'
-          INNER JOIN media_tags rmt2 ON rmt2.media_id = m2.id
-          INNER JOIN tags rt2        ON rt2.id = rmt2.tag_id AND rt2.facet = 'where'
-        WHERE m2.status = 'ready'
-          AND m2.visibility = 'public'
-          AND m2.hidden_at IS NULL
-          AND rt2.slug = rt.slug
-          AND m2.event_date = m.event_date
+        SELECT ARRAY_AGG(DISTINCT x.label) FROM (
+          SELECT t2.label
+          FROM media m2
+            INNER JOIN media_tags mt2  ON mt2.media_id = m2.id
+            INNER JOIN tags t2         ON t2.id = mt2.tag_id AND t2.facet = 'who'
+            INNER JOIN media_tags rmt2 ON rmt2.media_id = m2.id
+            INNER JOIN tags rt2        ON rt2.id = rmt2.tag_id AND rt2.facet = 'where'
+          WHERE m2.status = 'ready'
+            AND m2.visibility = 'public'
+            AND m2.hidden_at IS NULL
+            AND rt2.slug = mo.where_slug
+            AND m2.event_date = mo.event_date
+          UNION
+          SELECT pt2.label
+          FROM shows s2
+            INNER JOIN tags pt2 ON pt2.id = s2.who_tag_id
+            INNER JOIN tags wt2 ON wt2.id = s2.where_tag_id
+          WHERE wt2.slug = mo.where_slug
+            AND s2.event_date = mo.event_date
+        ) x
       ) AS performers
-    FROM media m
-      INNER JOIN media_tags rmt ON rmt.media_id = m.id
-      INNER JOIN tags rt        ON rt.id = rmt.tag_id AND rt.facet = 'where'
-    WHERE ${sql.join(conditions, sql` AND `)}
-    GROUP BY rt.slug, rt.label, m.event_date
-    HAVING COUNT(DISTINCT m.id) >= ${minMedia}
-    ORDER BY MAX(m.created_at) DESC
+    FROM mo
+    WHERE ${sql.join(outer, sql` AND `)}
+    ORDER BY ${order}
     LIMIT ${limit}
   `);
 
@@ -330,10 +446,12 @@ export async function findMoments(
     // Postgres COUNT returns bigint, which the driver hands back as a string.
     mediaCount: Number(r.media_count),
     contributorCount: Number(r.contributor_count),
-    lastUpload: new Date(r.last_upload).getTime(),
+    lastUpload: r.last_upload ? new Date(r.last_upload).getTime() : null,
     previewKeys: (r.preview_keys ?? []).slice(0, 4),
     kinds: r.kinds ?? [],
     performers: r.performers ?? [],
+    tour: r.tour,
+    isShow: Boolean(r.is_show),
   }));
 }
 
@@ -439,7 +557,18 @@ export async function getFacetOptions(): Promise<{
   const allTags = await db
     .select()
     .from(tags)
-    .where(sql`${tags.usageCount} > 0 AND ${tags.canonicalTagId} IS NULL`)
+    // Performers with a known show count as in use even before their first
+    // upload, so an imported artist is pickable from day one. Places don't get
+    // the same treatment: one touring history is hundreds of venues, which
+    // would bury the picker — they're reached through the performer instead.
+    .where(
+      sql`${tags.canonicalTagId} IS NULL AND (
+        ${tags.usageCount} > 0
+        OR (${tags.facet} = 'who' AND EXISTS (
+          SELECT 1 FROM shows s WHERE s.who_tag_id = ${tags.id}
+        ))
+      )`,
+    )
     .orderBy(desc(tags.usageCount), tags.label);
 
   const dateRows = await db

@@ -83,6 +83,28 @@ your places and artists first, rather than whatever the whole site posted most
 recently. Since moments have no row of their own, follows and moment comments
 store the `(place, date)` pair directly rather than a foreign key.
 
+### Known shows
+
+A moment born from uploads needs someone to post first, and that person finds
+an empty page. To get past that, a touring history can be loaded so every show
+has a moment before anyone posts: the performer, the tour, the setlist, and an
+**Add yours** button that opens the upload form already tagged for that night.
+
+```bash
+npm run import:shows -- data/shows/aimee-mann.json
+```
+
+`data/shows/aimee-mann.json` holds 1,011 Aimee Mann shows, 1988–2026, with
+setlists for 400 of them. Re-running it updates shows in place rather than
+duplicating them. Against production, set `DATABASE_URL` first.
+
+Shows sit in their own table (`shows` in [`lib/db/schema.ts`](lib/db/schema.ts))
+and key on the same `(place slug, date)` as uploads, so a show and the photos
+from it are one moment. Each venue is tagged with its city —
+"The Fillmore, San Francisco" — because one artist's history alone has a House
+of Blues in five cities. Empty shows stay off the home page; picking a
+performer, or one place, in `/explore` lists them.
+
 ### Filter semantics
 
 - **OR within a facet** — two performers means "either performer"

@@ -19,10 +19,13 @@ export function AuthForm({
   mode,
   action,
   inviteRequired = false,
+  next,
 }: {
   mode: "login" | "signup";
   action: (prev: AuthState, formData: FormData) => Promise<AuthState>;
   inviteRequired?: boolean;
+  /** Where to land after logging in, when sent here from a gated page. */
+  next?: string;
 }) {
   const [state, formAction] = useActionState<AuthState, FormData>(action, {});
   const isSignup = mode === "signup";
@@ -39,6 +42,7 @@ export function AuthForm({
       </p>
 
       <form action={formAction} className="space-y-4">
+        {next && <input type="hidden" name="next" value={next} />}
         {isSignup ? (
           <>
             {inviteRequired && (

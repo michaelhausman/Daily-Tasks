@@ -125,7 +125,11 @@ export async function logIn(
 
   await purgeExpiredSessions();
   await createSession(user.id);
-  redirect("/");
+
+  // Only a path on this site — "//evil.example" is a protocol-relative URL to
+  // somewhere else, which would make the login page an open redirect.
+  const next = String(formData.get("next") ?? "");
+  redirect(/^\/(?![/\\])/.test(next) ? next : "/");
 }
 
 export async function logOut(): Promise<void> {

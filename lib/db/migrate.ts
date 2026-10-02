@@ -139,6 +139,21 @@ const STATEMENTS = [
   )`,
   `CREATE INDEX IF NOT EXISTS reports_status_idx ON reports (status, created_at)`,
   `CREATE INDEX IF NOT EXISTS reports_media_idx ON reports (media_id)`,
+
+  `CREATE TABLE IF NOT EXISTS shows (
+    id TEXT PRIMARY KEY,
+    who_tag_id TEXT NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
+    where_tag_id TEXT NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
+    event_date DATE NOT NULL,
+    city TEXT,
+    region TEXT,
+    tour TEXT,
+    setlist_json TEXT,
+    setlist_url TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+  )`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS shows_who_where_date_unique ON shows (who_tag_id, where_tag_id, event_date)`,
+  `CREATE INDEX IF NOT EXISTS shows_where_date_idx ON shows (where_tag_id, event_date)`,
 ];
 
 /**

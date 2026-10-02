@@ -53,7 +53,29 @@ export default async function ExplorePage({
   ]);
 
   const isEmpty = selectionIsEmpty(selection);
-  const moments = isEmpty ? await findMoments({ limit: 6 }) : [];
+
+  // Picking a performer or a single place also lists its moments, including
+  // known shows nobody has posted from yet — the way into an artist's history
+  // before the uploads arrive. Topic and date picks narrow uploads, not shows,
+  // so they fall back to uploads alone.
+  const showMoments =
+    !isEmpty &&
+    selection.topic.length === 0 &&
+    selection.dates.length === 0 &&
+    selection.where.length <= 1 &&
+    (selection.who.length > 0 || selection.where.length === 1);
+
+  const moments = isEmpty
+    ? await findMoments({ limit: 6 })
+    : showMoments
+      ? await findMoments({
+          who: selection.who,
+          where: selection.where[0],
+          includeEmpty: true,
+          orderBy: "date",
+          limit: 60,
+        })
+      : [];
   const likes = await likeStateFor(
     results.map((r) => r.id),
     user?.id,
@@ -121,9 +143,18 @@ export default async function ExplorePage({
         </section>
       )}
 
-      {isEmpty && moments.length > 0 && (
+      {moments.length > 0 && (
         <section>
-          <h2 className="mb-3 text-xl font-bold">Moments</h2>
+          <h2 className="mb-3 text-xl font-bold">
+            {isEmpty ? "Moments" : "Shows and moments"}
+          </h2>
+          {!isEmpty && (
+            <p className="-mt-2 mb-4 text-sm muted">
+              Newest first
+              {moments.length === 60 ? " — the latest 60" : ""}. Every known
+              show has a page, even before anyone has posted from it.
+            </p>
+          )}
           <MomentGrid moments={moments} />
         </section>
       )}
