@@ -16,7 +16,7 @@ import {
  * real server and a plain array under PGlite. Normalizing here keeps callers
  * from caring which engine they're on.
  */
-function rowsOf<T>(result: unknown): T[] {
+export function rowsOf<T>(result: unknown): T[] {
   if (Array.isArray(result)) return result as T[];
   const rows = (result as { rows?: unknown }).rows;
   return Array.isArray(rows) ? (rows as T[]) : [];
@@ -31,7 +31,7 @@ function rowsOf<T>(result: unknown): T[] {
  * and reading that back via UTC getters shifts the day backwards for every
  * timezone east of UTC (Tokyo turns 2026-07-24 into 2026-07-23).
  */
-function asDateString(value: string | Date): string {
+export function asDateString(value: string | Date): string {
   if (value instanceof Date) {
     return [
       value.getFullYear(),

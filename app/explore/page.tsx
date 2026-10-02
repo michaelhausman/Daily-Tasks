@@ -1,9 +1,11 @@
+import Link from "next/link";
 import { Suspense } from "react";
 
 import { FollowButton } from "@/components/FollowButton";
 import { MediaGrid } from "@/components/MediaCard";
 import { MomentGrid } from "@/components/MomentCard";
 import { getCurrentUser } from "@/lib/auth/session";
+import { countShowsFor } from "@/lib/shows/service";
 import { getTagsBySlugs } from "@/lib/tags/service";
 import { isFollowingTag, likeStateFor } from "@/lib/social/service";
 import {
@@ -76,6 +78,11 @@ export default async function ExplorePage({
           limit: 60,
         })
       : [];
+  // One performer picked: offer their whole history, since the list above
+  // stops at the newest sixty.
+  const historyFor = selection.who.length === 1 ? selection.who[0] : null;
+  const historyCount = historyFor ? await countShowsFor(historyFor) : 0;
+
   const likes = await likeStateFor(
     results.map((r) => r.id),
     user?.id,
@@ -153,6 +160,17 @@ export default async function ExplorePage({
               Newest first
               {moments.length === 60 ? " — the latest 60" : ""}. Every known
               show has a page, even before anyone has posted from it.
+              {historyCount > 0 && (
+                <>
+                  {" "}
+                  <Link
+                    href={`/shows/${historyFor}`}
+                    style={{ color: "#7c5cff" }}
+                  >
+                    All {historyCount.toLocaleString()} shows, by year →
+                  </Link>
+                </>
+              )}
             </p>
           )}
           <MomentGrid moments={moments} />

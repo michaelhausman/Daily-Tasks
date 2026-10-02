@@ -143,6 +143,21 @@ export default async function MomentPage({
                 />
               ))}
             </div>
+            {shows.length > 0 && (
+              <p className="mt-2 text-xs">
+                {shows.map((show, i) => (
+                  <span key={show.id}>
+                    {i > 0 && " · "}
+                    <Link
+                      href={`/shows/${show.performer.slug}#y${date.slice(0, 4)}`}
+                      style={{ color: "#7c5cff" }}
+                    >
+                      All {show.performer.label} shows →
+                    </Link>
+                  </span>
+                ))}
+              </p>
+            )}
             {whoFilter && (
               <p className="mt-2 text-xs muted">
                 Showing only {performerTags.get(whoFilter) ?? whoFilter}.{" "}

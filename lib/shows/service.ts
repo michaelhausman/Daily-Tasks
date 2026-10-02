@@ -3,6 +3,7 @@ import { and, asc, eq, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { shows, tags } from "@/lib/db/schema";
 import { newId } from "@/lib/ids";
+import { asDateString, rowsOf } from "@/lib/media/queries";
 import { isValidEventDate } from "@/lib/tags/normalize";
 import { resolveTag } from "@/lib/tags/service";
 
@@ -169,4 +170,92 @@ export async function repointShows(fromId: string, intoId: string): Promise<void
       sql`UPDATE shows SET ${column} = ${intoId} WHERE ${column} = ${fromId}`,
     );
   }
+}
+
+export type ShowListing = {
+  eventDate: string;
+  where: { slug: string; label: string };
+  tour: string | null;
+  songCount: number;
+  setlistUrl: string | null;
+  /** Visible uploads in the moment this show belongs to. */
+  mediaCount: number;
+};
+
+/**
+ * Every show by one performer, newest first, for the by-year history page.
+ *
+ * Returns rows rather than full moments: a long career is a thousand shows, and
+ * the page lists them as compact lines, not cards with previews. The upload
+ * count uses the same (place, day) rule as moments, so a show and its photos
+ * stay one thing.
+ */
+export async function listShowsFor(
+  whoSlug: string,
+): Promise<{ performer: { slug: string; label: string } | null; shows: ShowListing[] }> {
+  const performer = await db
+    .select({ slug: tags.slug, label: tags.label })
+    .from(tags)
+    .where(and(eq(tags.facet, "who"), eq(tags.slug, whoSlug)))
+    .limit(1);
+  if (!performer[0]) return { performer: null, shows: [] };
+
+  const result = await db.execute(sql`
+    SELECT
+      s.event_date,
+      wt.slug  AS where_slug,
+      wt.label AS where_label,
+      s.tour,
+      s.setlist_json,
+      s.setlist_url,
+      (
+        SELECT COUNT(DISTINCT m.id)
+        FROM media m
+          INNER JOIN media_tags mt ON mt.media_id = m.id
+          INNER JOIN tags t        ON t.id = mt.tag_id AND t.facet = 'where'
+        WHERE t.slug = wt.slug
+          AND m.event_date = s.event_date
+          AND m.status = 'ready'
+          AND m.visibility = 'public'
+          AND m.hidden_at IS NULL
+      ) AS media_count
+    FROM shows s
+      INNER JOIN tags pt ON pt.id = s.who_tag_id
+      INNER JOIN tags wt ON wt.id = s.where_tag_id
+    WHERE pt.facet = 'who' AND pt.slug = ${whoSlug}
+    ORDER BY s.event_date DESC, wt.label
+  `);
+
+  const rows = rowsOf<{
+    event_date: string | Date;
+    where_slug: string;
+    where_label: string;
+    tour: string | null;
+    setlist_json: string | null;
+    setlist_url: string | null;
+    // COUNT is bigint: a string from node-postgres, a number from PGlite.
+    media_count: string | number;
+  }>(result);
+
+  return {
+    performer: performer[0],
+    shows: rows.map((r) => ({
+      eventDate: asDateString(r.event_date),
+      where: { slug: r.where_slug, label: r.where_label },
+      tour: r.tour,
+      songCount: r.setlist_json ? (JSON.parse(r.setlist_json) as string[]).length : 0,
+      setlistUrl: r.setlist_url,
+      mediaCount: Number(r.media_count),
+    })),
+  };
+}
+
+/** How many known shows a performer has — for linking to their history. */
+export async function countShowsFor(whoSlug: string): Promise<number> {
+  const rows = await db
+    .select({ n: sql<string>`count(*)` })
+    .from(shows)
+    .innerJoin(tags, eq(tags.id, shows.whoTagId))
+    .where(and(eq(tags.facet, "who"), eq(tags.slug, whoSlug)));
+  return Number(rows[0]?.n ?? 0);
 }
