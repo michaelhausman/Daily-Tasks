@@ -13,6 +13,7 @@
     "db:migrate": "tsx scripts/migrate.ts",
     "seed": "tsx scripts/seed.ts",
     "import:shows": "tsx scripts/import-shows.ts",
+    "fetch:setlistfm": "tsx scripts/fetch-setlistfm.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

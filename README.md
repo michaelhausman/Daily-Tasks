@@ -98,6 +98,19 @@ npm run import:shows -- data/shows/aimee-mann.json
 setlists for 400 of them. Re-running it updates shows in place rather than
 duplicating them. Against production, set `DATABASE_URL` first.
 
+More artists come from [setlist.fm](https://www.setlist.fm). Fetching and
+importing are separate, so the API key stays on your machine and only the data
+file reaches the server:
+
+```bash
+# once: put SETLISTFM_API_KEY=<key> in .env.local (git-ignored)
+npm run fetch:setlistfm -- "Jonathan Coulton"   # writes data/shows/jonathan-coulton.json
+npm run import:shows -- data/shows/jonathan-coulton.json
+```
+
+If two setlist.fm artists share the name, the fetch stops and lists them; re-run
+with `--mbid <id>` to pick one. The free API tier is for non-commercial use.
+
 Shows sit in their own table (`shows` in [`lib/db/schema.ts`](lib/db/schema.ts))
 and key on the same `(place slug, date)` as uploads, so a show and the photos
 from it are one moment. Each venue is tagged with its city —
