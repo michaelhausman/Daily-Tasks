@@ -50,6 +50,7 @@ export default defineRailway(() => {
     variables: {
       ADMIN_HANDLES: preserve(),
       DATABASE_URL: preserve(),
+      SETLISTFM_API_KEY: preserve(),
       SIGNUP_INVITE_CODE: preserve(),
       STORAGE_ROOT: preserve(),
       TAKEDOWN_CONTACT_EMAIL: preserve(),
