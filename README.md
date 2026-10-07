@@ -98,9 +98,18 @@ npm run import:shows -- data/shows/aimee-mann.json
 setlists for 400 of them. Re-running it updates shows in place rather than
 duplicating them. Against production, set `DATABASE_URL` first.
 
-More artists come from [setlist.fm](https://www.setlist.fm). Fetching and
-importing are separate, so the API key stays on your machine and only the data
-file reaches the server:
+Or import from the site itself: with `SETLISTFM_API_KEY` set on the server,
+**/admin/shows** takes an artist name and loads their whole history — no laptop
+involved. Because a long career is minutes of fetching, the job runs detached
+and writes progress to `show_imports`, so the page can be left or reloaded. One
+import runs at a time, since setlist.fm's rate limit is shared.
+
+That page also carries the venue questions: nights where one city has shows
+under two place names. Alignment settles the ones it can prove, and the rest
+are a judgement call — answering once records it in `venue_decisions` so no
+re-sync asks again.
+
+Fetching from a laptop stays available, and keeps the API key off the server:
 
 ```bash
 # once: put SETLISTFM_API_KEY=<key> in .env.local (git-ignored)

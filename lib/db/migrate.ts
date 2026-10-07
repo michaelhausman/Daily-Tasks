@@ -154,6 +154,40 @@ const STATEMENTS = [
   )`,
   `CREATE UNIQUE INDEX IF NOT EXISTS shows_who_where_date_unique ON shows (who_tag_id, where_tag_id, event_date)`,
   `CREATE INDEX IF NOT EXISTS shows_where_date_idx ON shows (where_tag_id, event_date)`,
+  // Aligning an incoming touring history scans shows by date, across performers.
+  `CREATE INDEX IF NOT EXISTS shows_event_date_idx ON shows (event_date)`,
+
+  `CREATE TABLE IF NOT EXISTS show_imports (
+    id TEXT PRIMARY KEY,
+    performer TEXT NOT NULL,
+    mbid TEXT,
+    status TEXT NOT NULL DEFAULT 'queued',
+    page INTEGER NOT NULL DEFAULT 0,
+    pages INTEGER NOT NULL DEFAULT 0,
+    fetched INTEGER NOT NULL DEFAULT 0,
+    added INTEGER NOT NULL DEFAULT 0,
+    updated INTEGER NOT NULL DEFAULT 0,
+    skipped INTEGER NOT NULL DEFAULT 0,
+    aligned INTEGER NOT NULL DEFAULT 0,
+    error TEXT,
+    started_by TEXT REFERENCES users(id) ON DELETE SET NULL,
+    heartbeat_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    finished_at TIMESTAMPTZ
+  )`,
+  `CREATE INDEX IF NOT EXISTS show_imports_created_idx ON show_imports (created_at)`,
+
+  `CREATE TABLE IF NOT EXISTS venue_decisions (
+    id TEXT PRIMARY KEY,
+    city TEXT NOT NULL,
+    names_json TEXT NOT NULL,
+    event_date DATE,
+    different BOOLEAN NOT NULL DEFAULT false,
+    note TEXT,
+    decided_by TEXT REFERENCES users(id) ON DELETE SET NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+  )`,
+  `CREATE INDEX IF NOT EXISTS venue_decisions_city_idx ON venue_decisions (city)`,
 ];
 
 /**
@@ -183,6 +217,11 @@ const CONSTRAINTS: Array<[table: string, name: string, check: string]> = [
     "reports",
     "reports_status_check",
     `status IN ('open','actioned','dismissed')`,
+  ],
+  [
+    "show_imports",
+    "show_imports_status_check",
+    `status IN ('queued','fetching','importing','done','failed')`,
   ],
   // Exactly one target, same shape as the comments constraint.
   [

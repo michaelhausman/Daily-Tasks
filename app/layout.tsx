@@ -49,12 +49,16 @@ export default async function RootLayout({
             {user ? (
               <>
                 {isAdmin(user.handle) && (
+                  // Visible on a phone too: this is the only route to the
+                  // moderation queue and the show importer, and a report that
+                  // arrives while you're out is exactly when you need it.
                   <Link
                     href="/admin"
-                    className="hidden text-sm sm:block"
+                    className="text-sm"
                     style={{ color: "#f05252" }}
                   >
-                    Moderation
+                    <span className="hidden sm:inline">Moderation</span>
+                    <span className="sm:hidden">Mod</span>
                     {openReportCount > 0 && ` (${openReportCount})`}
                   </Link>
                 )}

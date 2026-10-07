@@ -54,6 +54,9 @@ export default async function AdminPage() {
           Signed in as @{user.handle}.{" "}
           <Link href="/admin/tags" style={{ color: "#7c5cff" }}>
             Manage tags →
+          </Link>{" "}
+          <Link href="/admin/shows" style={{ color: "#7c5cff" }}>
+            Import shows →
           </Link>
         </p>
         {!hasAdmins() && (

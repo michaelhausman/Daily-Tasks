@@ -1,4 +1,5 @@
 import {
+  boolean,
   date,
   doublePrecision,
   index,
@@ -337,7 +338,99 @@ export const shows = pgTable(
       t.eventDate,
     ),
     index("shows_where_date_idx").on(t.whereTagId, t.eventDate),
+    index("shows_event_date_idx").on(t.eventDate),
   ],
+);
+
+export const IMPORT_STATUSES = [
+  "queued",
+  "fetching",
+  "importing",
+  "done",
+  "failed",
+] as const;
+export type ImportStatus = (typeof IMPORT_STATUSES)[number];
+
+/**
+ * One run of "fetch an artist from setlist.fm and load their shows".
+ *
+ * The row exists because the work outlives the request that asked for it: a
+ * long career is seventy API pages at 600ms apart, minutes of waiting that no
+ * browser or router will hold open. The admin page starts the job, the job
+ * writes its progress here, and the page polls the row — so a refresh, a phone
+ * going to sleep, or closing the tab doesn't abandon the import.
+ *
+ * `heartbeatAt` is how a dead job is spotted. Nothing outside the server
+ * process tracks whether a job is still running, so if the container restarts
+ * mid-fetch the row would otherwise claim to be fetching forever. A stale
+ * heartbeat frees the lock, and re-running is safe because importing is
+ * idempotent on (performer, place, day).
+ */
+export const showImports = pgTable(
+  "show_imports",
+  {
+    id: text("id").primaryKey(),
+    /** Artist name as setlist.fm spells it, which is what the tag is made from. */
+    performer: text("performer").notNull(),
+    /** MusicBrainz id — the thing that distinguishes two bands sharing a name. */
+    mbid: text("mbid"),
+    status: text("status", { enum: IMPORT_STATUSES }).notNull().default("queued"),
+
+    page: integer("page").notNull().default(0),
+    pages: integer("pages").notNull().default(0),
+    fetched: integer("fetched").notNull().default(0),
+    added: integer("added").notNull().default(0),
+    updated: integer("updated").notNull().default(0),
+    skipped: integer("skipped").notNull().default(0),
+    /** Venue spellings matched to a show already on file, so no page split. */
+    aligned: integer("aligned").notNull().default(0),
+
+    error: text("error"),
+    startedBy: text("started_by").references(() => users.id, {
+      onDelete: "set null",
+    }),
+
+    heartbeatAt: timestamp("heartbeat_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    finishedAt: timestamp("finished_at", { withTimezone: true }),
+  },
+  (t) => [index("show_imports_created_idx").on(t.createdAt)],
+);
+
+/**
+ * A person's answer to "are these two venue names the same room?".
+ *
+ * Importing can tell that "The Birchmere" and "Birchmere" are one place, but
+ * not that the Kitty Carlisle Hart Theatre is inside The Egg. Those need
+ * someone who knows, and the answer has to outlive the import that asked —
+ * otherwise every re-sync asks again, and whoever is clicking eventually
+ * guesses. Same shape as the hand-written `data/shows/venues.json`, because it
+ * is the same decision: `names` are spellings of one room in that city, and
+ * `different` marks two places that merely shared a night.
+ */
+export const venueDecisions = pgTable(
+  "venue_decisions",
+  {
+    id: text("id").primaryKey(),
+    city: text("city").notNull(),
+    /** Venue names, without the city — JSON array, same convention as setlistJson. */
+    namesJson: text("names_json").notNull(),
+    /** Null means every night; set when the names only coincide on one date. */
+    eventDate: date("event_date", { mode: "string" }),
+    different: boolean("different").notNull().default(false),
+    note: text("note"),
+    decidedBy: text("decided_by").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [index("venue_decisions_city_idx").on(t.city)],
 );
 
 export const REPORT_REASONS = [
@@ -401,3 +494,5 @@ export type Tag = typeof tags.$inferSelect;
 export type Comment = typeof comments.$inferSelect;
 export type Report = typeof reports.$inferSelect;
 export type Show = typeof shows.$inferSelect;
+export type ShowImport = typeof showImports.$inferSelect;
+export type VenueDecisionRow = typeof venueDecisions.$inferSelect;

@@ -33,6 +33,15 @@ export const SIGNUP_INVITE_CODE = process.env.SIGNUP_INVITE_CODE?.trim() || null
 export const SIGNUP_OPEN = process.env.SIGNUP_DISABLED !== "true";
 
 /**
+ * setlist.fm API key, for importing touring histories from the admin pages.
+ *
+ * Optional: unset, the admin page says so and the `npm run fetch:setlistfm`
+ * script stays the way in. The key is read only on the server and never
+ * reaches the browser.
+ */
+export const SETLISTFM_API_KEY = process.env.SETLISTFM_API_KEY?.trim() || null;
+
+/**
  * Handles that may delete anyone's uploads. Comma-separated, case-insensitive.
  * A full role system isn't warranted yet; this is the smallest thing that lets
  * the owner take something down.

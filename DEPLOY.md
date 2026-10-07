@@ -86,6 +86,12 @@ What these do:
 Optional, with sensible defaults already: `MAX_UPLOAD_MB` (50),
 `UPLOADS_PER_HOUR` (30), `SIGNUP_DISABLED`. See `.env.example`.
 
+`SETLISTFM_API_KEY` is optional too, and worth setting: with it, `/admin/shows`
+can import an artist's touring history from a phone. Without it that page
+explains it's unavailable and importing stays a laptop job
+(`npm run fetch:setlistfm`). A free key comes from setlist.fm → Settings → API;
+it's read on the server only and never sent to the browser.
+
 ## 4. Deploy
 
 **Deploy** on the app service. The build takes a few minutes.
