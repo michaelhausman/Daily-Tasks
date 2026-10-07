@@ -4,35 +4,75 @@ import { notFound } from "next/navigation";
 import { FACET_COLOR } from "@/components/Chip";
 import { getCurrentUser } from "@/lib/auth/session";
 import { isAdmin } from "@/lib/config";
+import { FACETS, type Facet } from "@/lib/db/schema";
 import {
   deleteTagAction,
   mergeTagsAction,
   renameTagAction,
 } from "@/lib/moderation/actions";
-import { allTags } from "@/lib/moderation/service";
-import { ModForm } from "../ModForm";
+import { findTags } from "@/lib/moderation/service";
 import { TagRow } from "./TagRow";
 
 export const dynamic = "force-dynamic";
 
-export default async function AdminTagsPage() {
+const PER_PAGE = 50;
+
+function one(value: string | string[] | undefined): string {
+  return (Array.isArray(value) ? value[0] : value) ?? "";
+}
+
+export default async function AdminTagsPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
   const user = await getCurrentUser();
   if (!user || !isAdmin(user.handle)) notFound();
 
-  const tags = await allTags();
-  const byFacet = {
-    who: tags.filter((t) => t.facet === "who"),
-    where: tags.filter((t) => t.facet === "where"),
-    topic: tags.filter((t) => t.facet === "topic"),
-  };
+  const params = await searchParams;
+  const query = one(params.q).trim();
+  const rawFacet = one(params.facet);
+  const facet = FACETS.includes(rawFacet as Facet) ? (rawFacet as Facet) : null;
+  const page = Math.max(1, Number(one(params.page)) || 1);
+
+  const { rows, total, pages, page: current } = await findTags({
+    query,
+    facet,
+    page,
+    perPage: PER_PAGE,
+  });
+
+  // Keeps the search and facet when stepping through pages.
+  function pageHref(to: number): string {
+    const next = new URLSearchParams();
+    if (query) next.set("q", query);
+    if (facet) next.set("facet", facet);
+    if (to > 1) next.set("page", String(to));
+    const qs = next.toString();
+    return qs ? `/admin/tags?${qs}` : "/admin/tags";
+  }
+
+  function facetHref(to: Facet | null): string {
+    const next = new URLSearchParams();
+    if (query) next.set("q", query);
+    if (to) next.set("facet", to);
+    const qs = next.toString();
+    return qs ? `/admin/tags?${qs}` : "/admin/tags";
+  }
+
+  const first = total === 0 ? 0 : (current - 1) * PER_PAGE + 1;
+  const last = Math.min(current * PER_PAGE, total);
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       <header>
         <h1 className="text-2xl font-bold">Tags</h1>
         <p className="mt-1 text-sm muted">
           <Link href="/admin" style={{ color: "#7c5cff" }}>
             ← Back to moderation
+          </Link>{" "}
+          <Link href="/admin/shows" style={{ color: "#7c5cff" }}>
+            Import shows →
           </Link>
         </p>
         <p className="mt-3 max-w-2xl text-sm muted">
@@ -43,74 +83,106 @@ export default async function AdminTagsPage() {
         </p>
       </header>
 
-      {(["who", "where", "topic"] as const).map((facet) => (
-        <section key={facet}>
-          <h2 className="mb-3 text-lg font-bold">
+      {/* A plain GET form, so a search is a URL you can bookmark or reload. */}
+      <form method="get" className="flex flex-wrap items-center gap-2">
+        {facet && <input type="hidden" name="facet" value={facet} />}
+        <input
+          name="q"
+          defaultValue={query}
+          placeholder="Search tags — try a venue you suspect is duplicated"
+          className="input text-sm"
+          style={{ flex: "1 1 18rem", minWidth: 0 }}
+        />
+        <button type="submit" className="btn btn-primary text-sm">
+          Search
+        </button>
+        {query && (
+          <Link href={facetHref(facet)} className="text-xs muted underline">
+            Clear
+          </Link>
+        )}
+      </form>
+
+      <div className="flex flex-wrap items-center gap-2">
+        <Link
+          href={facetHref(null)}
+          className="chip text-xs"
+          style={
+            facet === null
+              ? { borderColor: "#7c5cff", color: "#7c5cff" }
+              : undefined
+          }
+        >
+          All
+        </Link>
+        {FACETS.map((f) => (
+          <Link
+            key={f}
+            href={facetHref(f)}
+            className="chip text-xs"
+            style={
+              facet === f
+                ? { borderColor: FACET_COLOR[f], color: FACET_COLOR[f] }
+                : undefined
+            }
+          >
             <span
-              className="mr-2 inline-block h-2.5 w-2.5 rounded-full align-middle"
-              style={{ background: FACET_COLOR[facet] }}
+              className="mr-1.5 inline-block h-2 w-2 rounded-full align-middle"
+              style={{ background: FACET_COLOR[f] }}
             />
-            {facet}
-            <span className="ml-2 text-sm font-normal muted">
-              {byFacet[facet].length}
-            </span>
-          </h2>
+            {f}
+          </Link>
+        ))}
 
-          {byFacet[facet].length === 0 ? (
-            <p className="text-sm muted">None yet.</p>
-          ) : (
-            <ul className="space-y-2">
-              {byFacet[facet].map((t) => (
-                <TagRow
-                  key={t.id}
-                  tag={{
-                    id: t.id,
-                    facet: t.facet,
-                    slug: t.slug,
-                    label: t.label,
-                    usageCount: t.usageCount,
-                    isAlias: t.canonicalTagId !== null,
-                  }}
-                  siblings={byFacet[facet]
-                    .filter((o) => o.id !== t.id && o.canonicalTagId === null)
-                    .map((o) => ({ id: o.id, label: o.label }))}
-                  renameAction={renameTagAction}
-                  mergeAction={mergeTagsAction}
-                />
-              ))}
-            </ul>
-          )}
-        </section>
-      ))}
+        <span className="flex-1" />
+        <span className="text-xs muted">
+          {total === 0
+            ? "No matches"
+            : `${first.toLocaleString()}–${last.toLocaleString()} of ${total.toLocaleString()}`}
+        </span>
+      </div>
 
-      <section>
-        <h2 className="mb-3 text-lg font-bold">Delete a tag</h2>
-        <p className="mb-3 max-w-2xl text-sm muted">
-          Removes the label everywhere. Uploads that used it stay, they just lose
-          that one tag — which may drop them out of a moment, so prefer merging
-          where a correct tag exists.
+      {rows.length === 0 ? (
+        <p className="text-sm muted">
+          {query
+            ? `Nothing matches “${query}”.`
+            : "No tags yet — they appear as people upload."}
         </p>
+      ) : (
         <ul className="space-y-2">
-          {tags.map((t) => (
-            <li
-              key={t.id}
-              className="surface flex flex-wrap items-center gap-3 rounded-xl p-3"
-            >
-              <span className="flex-1 text-sm">
-                <span className="muted">{t.facet}:</span> {t.label}{" "}
-                <span className="text-xs muted">({t.usageCount})</span>
-              </span>
-              <ModForm
-                action={deleteTagAction}
-                label="Delete tag"
-                tone="danger"
-                fields={{ tagId: t.id }}
-                confirm={`Delete the tag "${t.label}"? Uploads keep their files but lose this tag.`}
-              />
-            </li>
+          {rows.map((tag) => (
+            <TagRow
+              key={tag.id}
+              tag={tag}
+              renameAction={renameTagAction}
+              mergeAction={mergeTagsAction}
+              deleteAction={deleteTagAction}
+            />
           ))}
         </ul>
-      </section>
+      )}
+
+      {pages > 1 && (
+        <nav className="flex items-center justify-between text-sm">
+          {current > 1 ? (
+            <Link href={pageHref(current - 1)} style={{ color: "#7c5cff" }}>
+              ← Previous
+            </Link>
+          ) : (
+            <span />
+          )}
+          <span className="text-xs muted">
+            Page {current} of {pages}
+          </span>
+          {current < pages ? (
+            <Link href={pageHref(current + 1)} style={{ color: "#7c5cff" }}>
+              Next →
+            </Link>
+          ) : (
+            <span />
+          )}
+        </nav>
+      )}
     </div>
   );
 }

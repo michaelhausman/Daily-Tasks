@@ -4,7 +4,13 @@ import { revalidatePath } from "next/cache";
 
 import { getCurrentUser } from "@/lib/auth/session";
 import { isAdmin } from "@/lib/config";
-import { REPORT_REASONS, type ReportReason } from "@/lib/db/schema";
+import {
+  FACETS,
+  REPORT_REASONS,
+  type Facet,
+  type ReportReason,
+} from "@/lib/db/schema";
+import { getTagsBySlugs } from "@/lib/tags/service";
 import { deleteMedia } from "@/lib/media/delete";
 import { deleteComment } from "@/lib/social/service";
 import {
@@ -216,10 +222,25 @@ export async function mergeTagsAction(
   const admin = await requireAdmin();
   if (!admin) return { error: "Not allowed." };
 
-  const result = await mergeTags(
-    String(formData.get("fromId") ?? ""),
-    String(formData.get("intoId") ?? ""),
-  );
+  const fromId = String(formData.get("fromId") ?? "");
+
+  // The tag picker submits a slug, because the suggestion endpoint it reads
+  // is public and has no business handing out row ids. A caller that already
+  // holds the id (the venue questions on /admin/shows) still passes it.
+  let intoId = String(formData.get("intoId") ?? "");
+  const intoSlug = String(formData.get("intoSlug") ?? "");
+  if (!intoId && intoSlug) {
+    const facet = String(formData.get("facet") ?? "");
+    if (!FACETS.includes(facet as Facet)) return { error: "Unknown facet." };
+    const [target] = await getTagsBySlugs([
+      { facet: facet as Facet, slug: intoSlug },
+    ]);
+    if (!target) return { error: "That tag no longer exists." };
+    intoId = target.id;
+  }
+  if (!intoId) return { error: "Pick the tag to merge into." };
+
+  const result = await mergeTags(fromId, intoId);
   if (!result.ok) return { error: result.error };
 
   revalidatePath("/admin/tags");

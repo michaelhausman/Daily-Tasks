@@ -1,4 +1,4 @@
-import { and, desc, eq, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, isNull, sql, type SQL } from "drizzle-orm";
 
 import { db } from "@/lib/db";
 import {
@@ -8,9 +8,11 @@ import {
   reports,
   tags,
   users,
+  type Facet,
   type ReportReason,
 } from "@/lib/db/schema";
 import { newId } from "@/lib/ids";
+import { rowsOf } from "@/lib/media/queries";
 import { repointShows } from "@/lib/shows/service";
 import { matchKey, slugify } from "@/lib/tags/normalize";
 import { bumpUsage } from "@/lib/tags/service";
@@ -362,11 +364,95 @@ export async function deleteTag(tagId: string): Promise<void> {
   await db.delete(tags).where(eq(tags.id, tagId));
 }
 
-export async function allTags() {
-  return db
-    .select()
-    .from(tags)
-    .orderBy(tags.facet, desc(tags.usageCount), tags.label);
+export type TagListing = {
+  id: string;
+  facet: Facet;
+  slug: string;
+  label: string;
+  usageCount: number;
+  showCount: number;
+  /** Set when this tag was merged away — the label it now resolves to. */
+  aliasOf: string | null;
+};
+
+/**
+ * One page of tags, filtered.
+ *
+ * This used to be every tag at once, with every sibling rendered into a merge
+ * dropdown on every row — fine at twenty tags and quadratic after that. One
+ * touring history took it past seven hundred places, which is half a million
+ * option elements and a page no phone can open.
+ *
+ * Searching matches the loose key as well as the slug, so looking for the
+ * duplicate of "Wilbur Theater" finds "The Wilbur Theatre, Boston" — which is
+ * the main reason to come here at all.
+ */
+export async function findTags(opts: {
+  query?: string;
+  facet?: Facet | null;
+  page?: number;
+  perPage?: number;
+}): Promise<{
+  rows: TagListing[];
+  total: number;
+  page: number;
+  pages: number;
+}> {
+  const perPage = Math.min(Math.max(opts.perPage ?? 50, 1), 200);
+  const slug = slugify(opts.query ?? "");
+  const key = matchKey(opts.query ?? "");
+
+  const where: SQL[] = [];
+  if (opts.facet) where.push(sql`t.facet = ${opts.facet}`);
+  if (slug || key) {
+    const parts: SQL[] = [];
+    if (slug) parts.push(sql`t.slug LIKE ${`%${slug}%`}`);
+    if (key) parts.push(sql`t.match_key LIKE ${`%${key}%`}`);
+    where.push(sql`(${sql.join(parts, sql` OR `)})`);
+  }
+  const filter = where.length > 0 ? sql`WHERE ${sql.join(where, sql` AND `)}` : sql``;
+
+  const totalRows = rowsOf<{ n: string | number }>(
+    await db.execute(sql`SELECT COUNT(*) AS n FROM tags t ${filter}`),
+  );
+  const total = Number(totalRows[0]?.n ?? 0);
+  const pages = Math.max(1, Math.ceil(total / perPage));
+  const page = Math.min(Math.max(opts.page ?? 1, 1), pages);
+
+  const result = await db.execute(sql`
+    SELECT
+      t.id, t.facet, t.slug, t.label, t.usage_count,
+      a.label AS alias_of,
+      (
+        SELECT COUNT(*) FROM shows s
+        WHERE s.who_tag_id = t.id OR s.where_tag_id = t.id
+      ) AS show_count
+    FROM tags t
+      LEFT JOIN tags a ON a.id = t.canonical_tag_id
+    ${filter}
+    ORDER BY t.usage_count DESC, t.label
+    LIMIT ${perPage} OFFSET ${(page - 1) * perPage}
+  `);
+
+  const rows = rowsOf<{
+    id: string;
+    facet: Facet;
+    slug: string;
+    label: string;
+    usage_count: number;
+    alias_of: string | null;
+    show_count: string | number;
+  }>(result).map((r) => ({
+    id: r.id,
+    facet: r.facet,
+    slug: r.slug,
+    label: r.label,
+    usageCount: r.usage_count,
+    showCount: Number(r.show_count),
+    aliasOf: r.alias_of,
+  }));
+
+  return { rows, total, page, pages };
 }
 
 // ─── recent activity, for the queue ──────────────────────────────────────────
