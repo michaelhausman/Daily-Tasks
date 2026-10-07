@@ -92,6 +92,12 @@ explains it's unavailable and importing stays a laptop job
 (`npm run fetch:setlistfm`). A free key comes from setlist.fm → Settings → API;
 it's read on the server only and never sent to the browser.
 
+With that key set, loaded performers also re-fetch every `SHOW_REFRESH_DAYS`
+days (7 by default) so new tour dates appear by themselves. It needs no cron
+service and no second deploy — it's a timer inside the app, and what's due is
+worked out from the database, so restarts don't matter. `SHOW_REFRESH_DAYS=0`
+turns it off.
+
 ## 4. Deploy
 
 **Deploy** on the app service. The build takes a few minutes.

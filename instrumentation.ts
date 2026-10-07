@@ -23,4 +23,15 @@ export async function register() {
     console.error("[tagpool] migration failed at startup:", error);
     throw error;
   }
+
+  // After the schema, because the first tick reads tables it just made — and
+  // outside that try, because this one is the opposite case: a site whose
+  // tour dates go stale is still a working site, so it must not stop the
+  // server from starting.
+  try {
+    const { startShowRefresh } = await import("./lib/shows/scheduler");
+    startShowRefresh();
+  } catch (error) {
+    console.error("[tagpool] could not start the show refresh:", error);
+  }
 }

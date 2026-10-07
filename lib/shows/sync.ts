@@ -12,7 +12,7 @@ import {
 import { newId } from "@/lib/ids";
 import { asDateString, rowsOf } from "@/lib/media/queries";
 import { matchKey } from "@/lib/tags/normalize";
-import { SETLISTFM_API_KEY } from "@/lib/config";
+import { SETLISTFM_API_KEY, SHOW_REFRESH_DAYS } from "@/lib/config";
 import {
   alignVenues,
   fetchSetlists,
@@ -125,7 +125,8 @@ export type StartResult =
 export async function startArtistSync(opts: {
   name: string;
   mbid?: string;
-  userId: string;
+  /** Null for the weekly refresh, which nobody pressed a button to start. */
+  userId: string | null;
 }): Promise<StartResult> {
   const apiKey = SETLISTFM_API_KEY;
   if (!apiKey) {
@@ -723,6 +724,190 @@ export async function loadedPerformers(): Promise<LoadedPerformer[]> {
     lastDate: asDateString(r.last_date),
     withSetlists: Number(r.with_setlists),
   }));
+}
+
+/**
+ * Don't re-attempt the same performer faster than this, whatever happened.
+ * A refresh that fails for a reason that won't fix itself — a renamed artist,
+ * a revoked key — shouldn't turn into hourly API calls forever.
+ */
+const RETRY_AFTER_MS = 6 * 60 * 60_000;
+
+/**
+ * Consecutive failures before a performer is left alone. Three is enough to
+ * ride out setlist.fm being down and few enough that a real problem surfaces
+ * on the admin page while it still means something.
+ */
+const GIVE_UP_AFTER = 3;
+
+export type RefreshState = {
+  label: string;
+  mbid: string | null;
+  lastSuccess: Date | null;
+  lastAttempt: Date | null;
+  /** Failures since the last success — at GIVE_UP_AFTER, auto-refresh stops. */
+  failures: number;
+  dueAt: Date | null;
+  due: boolean;
+  stuck: boolean;
+  lastError: string | null;
+};
+
+/**
+ * When each loaded performer was last pulled from setlist.fm, and what is due.
+ *
+ * Derived from the import history rather than a column on the performer: the
+ * `show_imports` rows already say what was attempted, when, and how it went,
+ * and a second place to record it is a second place to get it wrong. A
+ * performer loaded by the scripts has no rows at all, which reads as "never
+ * refreshed" — correct, and the reason they're first in the queue.
+ */
+export async function refreshStates(): Promise<RefreshState[]> {
+  const performers = await loadedPerformers();
+  if (performers.length === 0) return [];
+
+  const result = await db.execute(sql`
+    SELECT
+      performer,
+      MAX(created_at)                                 AS last_attempt,
+      MAX(finished_at) FILTER (WHERE status = 'done') AS last_success,
+      MAX(mbid)        FILTER (WHERE status = 'done') AS mbid
+    FROM show_imports
+    GROUP BY performer
+  `);
+
+  const history = new Map(
+    rowsOf<{
+      performer: string;
+      last_attempt: string | Date | null;
+      last_success: string | Date | null;
+      mbid: string | null;
+    }>(result).map((r) => [r.performer.toLowerCase(), r]),
+  );
+
+  // Failures since the last success, counted per performer in one pass.
+  const failResult = await db.execute(sql`
+    SELECT i.performer, COUNT(*) AS n, MAX(i.error) AS last_error
+    FROM show_imports i
+    WHERE i.status = 'failed'
+      AND i.created_at > COALESCE(
+        (SELECT MAX(d.finished_at) FROM show_imports d
+          WHERE d.performer = i.performer AND d.status = 'done'),
+        '-infinity'::timestamptz
+      )
+    GROUP BY i.performer
+  `);
+  const failures = new Map(
+    rowsOf<{ performer: string; n: string | number; last_error: string | null }>(
+      failResult,
+    ).map((r) => [
+      r.performer.toLowerCase(),
+      { n: Number(r.n), error: r.last_error },
+    ]),
+  );
+
+  const everyMs = SHOW_REFRESH_DAYS * 86_400_000;
+  const now = Date.now();
+
+  return performers.map((performer) => {
+    const key = performer.label.toLowerCase();
+    const row = history.get(key);
+    const fail = failures.get(key);
+
+    const lastSuccess = row?.last_success ? new Date(row.last_success) : null;
+    const lastAttempt = row?.last_attempt ? new Date(row.last_attempt) : null;
+    const failCount = fail?.n ?? 0;
+
+    const dueAt = lastSuccess ? new Date(lastSuccess.getTime() + everyMs) : null;
+    const stuck = failCount >= GIVE_UP_AFTER;
+    const cooling =
+      lastAttempt !== null && now - lastAttempt.getTime() < RETRY_AFTER_MS;
+
+    return {
+      label: performer.label,
+      mbid: row?.mbid ?? null,
+      lastSuccess,
+      lastAttempt,
+      failures: failCount,
+      dueAt,
+      due:
+        SHOW_REFRESH_DAYS > 0 &&
+        !stuck &&
+        !cooling &&
+        (dueAt === null || dueAt.getTime() <= now),
+      stuck,
+      lastError: fail?.error ?? null,
+    };
+  });
+}
+
+/**
+ * Start a refresh if one is due, and return what happened.
+ *
+ * Deliberately one performer per call rather than looping: imports run one at
+ * a time anyway, and taking the single most-overdue artist each tick spreads
+ * a catalogue across hours instead of queueing an afternoon of API calls the
+ * moment the week rolls over.
+ */
+export async function refreshDuePerformer(): Promise<
+  { started: string } | { skipped: string }
+> {
+  if (SHOW_REFRESH_DAYS <= 0) return { skipped: "auto-refresh is off" };
+  if (!syncAvailable()) return { skipped: "no SETLISTFM_API_KEY" };
+
+  const busy = await activeImport();
+  if (busy) return { skipped: `${busy.performer} is already importing` };
+
+  const states = await refreshStates();
+  const due = states
+    .filter((s) => s.due)
+    // Never refreshed first, then whoever has waited longest.
+    .sort(
+      (a, b) =>
+        (a.lastSuccess?.getTime() ?? 0) - (b.lastSuccess?.getTime() ?? 0),
+    );
+
+  const next = due[0];
+  if (!next) return { skipped: "nothing due" };
+
+  const result = await startArtistSync({
+    name: next.label,
+    // Reuse the id a previous run resolved, so a performer whose tag label
+    // isn't exactly setlist.fm's spelling still refreshes, and one whose name
+    // is shared by another band can't drift onto the wrong one.
+    mbid: next.mbid ?? undefined,
+    userId: null,
+  });
+
+  if (result.ok) return { started: next.label };
+  if ("choices" in result) {
+    // Ambiguous without an mbid, and a scheduler must not guess which band.
+    await recordSchedulerFailure(
+      next.label,
+      `"${next.label}" matches ${result.choices.length} artists on setlist.fm — import it once by hand to pin which.`,
+    );
+    return { skipped: `${next.label} is ambiguous` };
+  }
+  await recordSchedulerFailure(next.label, result.error);
+  return { skipped: `${next.label}: ${result.error}` };
+}
+
+/**
+ * A refusal before a job row exists still has to be remembered, or the
+ * scheduler retries it every tick and nothing ever shows up on the admin page
+ * to explain why a performer stopped updating.
+ */
+async function recordSchedulerFailure(
+  performer: string,
+  error: string,
+): Promise<void> {
+  await db.insert(showImports).values({
+    id: newId(),
+    performer,
+    status: "failed",
+    error,
+    finishedAt: new Date(),
+  });
 }
 
 /** Shows with no uploads yet — the cold-start number worth watching. */

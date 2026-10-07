@@ -104,10 +104,20 @@ involved. Because a long career is minutes of fetching, the job runs detached
 and writes progress to `show_imports`, so the page can be left or reloaded. One
 import runs at a time, since setlist.fm's rate limit is shared.
 
+Loaded performers then re-fetch themselves every `SHOW_REFRESH_DAYS` days
+(7 by default, `0` to stop), so dates announced after the first import turn
+up without anyone doing anything. The scheduler is a timer in the web process
+rather than a second service: the whole of "what is due" comes from the import
+history, so restarts and deploys don't disturb the schedule. It takes the
+single most-overdue artist per hourly check, backs off for six hours after a
+failure, and gives up on an artist after three — saying so on the page, rather
+than retrying forever in silence.
+
 That page also carries the venue questions: nights where one city has shows
 under two place names. Alignment settles the ones it can prove, and the rest
 are a judgement call — answering once records it in `venue_decisions` so no
-re-sync asks again.
+re-sync asks again. A second sweep compares names within a city regardless of
+date, which catches spellings that never collide on one night.
 
 Fetching from a laptop stays available, and keeps the API key off the server:
 

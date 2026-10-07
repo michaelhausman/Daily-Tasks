@@ -4,11 +4,20 @@
  * describe and there are no magic numbers scattered through route handlers.
  */
 
-function intFromEnv(name: string, fallback: number): number {
+function intFromEnv(
+  name: string,
+  fallback: number,
+  // Zero is a real setting for some of these ("off"), and a mistake for the
+  // rest (a 0MB upload limit), so each one says which it is.
+  { allowZero = false }: { allowZero?: boolean } = {},
+): number {
   const raw = process.env[name];
   if (!raw) return fallback;
   const parsed = Number(raw);
-  return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : fallback;
+  const floor = allowZero ? 0 : 1;
+  return Number.isFinite(parsed) && parsed >= floor
+    ? Math.floor(parsed)
+    : fallback;
 }
 
 /** Per-file ceiling. 50MB comfortably covers phone photos and short clips. */
@@ -40,6 +49,20 @@ export const SIGNUP_OPEN = process.env.SIGNUP_DISABLED !== "true";
  * reaches the browser.
  */
 export const SETLISTFM_API_KEY = process.env.SETLISTFM_API_KEY?.trim() || null;
+
+/**
+ * How often a loaded performer is re-fetched from setlist.fm, in days.
+ *
+ * Touring histories go stale forwards: dates get announced, and a show page
+ * is most useful to a fan *before* the night rather than after. Re-importing
+ * is cheap because it's keyed on performer, place and day — a second run
+ * updates in place — so the only real cost is API calls.
+ *
+ * `SHOW_REFRESH_DAYS=0` turns it off.
+ */
+export const SHOW_REFRESH_DAYS = intFromEnv("SHOW_REFRESH_DAYS", 7, {
+  allowZero: true,
+});
 
 /**
  * Handles that may delete anyone's uploads. Comma-separated, case-insensitive.

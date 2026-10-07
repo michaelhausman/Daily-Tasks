@@ -14,11 +14,14 @@ import {
   inventedPlaces,
   loadedPerformers,
   recentImports,
+  refreshStates,
   showStats,
   syncAvailable,
   venueQuestions,
   type ImportJob,
+  type RefreshState,
 } from "@/lib/shows/sync";
+import { SHOW_REFRESH_DAYS } from "@/lib/config";
 import { ModForm } from "../ModForm";
 import { ImportForm, ProgressPoller } from "./ImportForm";
 import { VenueForm } from "./VenueForm";
@@ -44,6 +47,29 @@ function ago(at: Date | string): string {
     if (n >= 1) return `${n} ${name}${n === 1 ? "" : "s"} ago`;
   }
   return "just now";
+}
+
+/** When a performer was last pulled from setlist.fm, and what happens next. */
+function describeRefresh(state: RefreshState | undefined): string {
+  if (!state) return "";
+  if (state.stuck) {
+    return `auto-refresh paused after ${state.failures} failures`;
+  }
+  if (!state.lastSuccess) return "never refreshed from setlist.fm";
+  const last = `refreshed ${ago(state.lastSuccess)}`;
+  if (SHOW_REFRESH_DAYS <= 0) return last;
+  if (state.due) return `${last} · due now`;
+  if (state.dueAt) return `${last} · next in ${until(state.dueAt)}`;
+  return last;
+}
+
+function until(at: Date): string {
+  const seconds = Math.max(0, (new Date(at).getTime() - Date.now()) / 1000);
+  const days = Math.floor(seconds / 86400);
+  if (days >= 1) return `${days} ${days === 1 ? "day" : "days"}`;
+  const hours = Math.floor(seconds / 3600);
+  if (hours >= 1) return `${hours} ${hours === 1 ? "hour" : "hours"}`;
+  return "under an hour";
 }
 
 function describe(job: ImportJob): string {
@@ -75,16 +101,28 @@ export default async function AdminShowsPage() {
   const user = await getCurrentUser();
   if (!user || !isAdmin(user.handle)) notFound();
 
-  const [running, history, performers, questions, clusters, invented, stats] =
-    await Promise.all([
-      activeImport(),
-      recentImports(6),
-      loadedPerformers(),
-      venueQuestions(),
-      duplicatePlaces(),
-      inventedPlaces(),
-      showStats(),
-    ]);
+  const [
+    running,
+    history,
+    performers,
+    questions,
+    clusters,
+    invented,
+    refreshes,
+    stats,
+  ] = await Promise.all([
+    activeImport(),
+    recentImports(6),
+    loadedPerformers(),
+    venueQuestions(),
+    duplicatePlaces(),
+    inventedPlaces(),
+    refreshStates(),
+    showStats(),
+  ]);
+
+  const refreshByLabel = new Map(refreshes.map((r) => [r.label, r]));
+  const stuck = refreshes.filter((r) => r.stuck);
 
   const available = syncAvailable();
 
@@ -141,7 +179,38 @@ export default async function AdminShowsPage() {
           two requests a second and the import stays under it. You can leave
           this page; the job keeps running and the progress is here when you
           come back.
+          {available && SHOW_REFRESH_DAYS > 0 && (
+            <>
+              {" "}
+              Everyone already loaded re-fetches itself every{" "}
+              {SHOW_REFRESH_DAYS} days, one artist at a time, so newly
+              announced dates turn up on their own. Set{" "}
+              <code>SHOW_REFRESH_DAYS=0</code> to stop that.
+            </>
+          )}
+          {available && SHOW_REFRESH_DAYS <= 0 && (
+            <> Automatic re-fetching is off (<code>SHOW_REFRESH_DAYS=0</code>).</>
+          )}
         </p>
+
+        {stuck.length > 0 && (
+          <div
+            className="mt-3 rounded-lg px-3 py-2 text-sm"
+            style={{ background: "#f0525220" }}
+          >
+            <p style={{ color: "#f05252" }}>
+              Auto-refresh gave up on{" "}
+              {stuck.map((s) => s.label).join(", ")} after repeated failures,
+              so their dates have stopped updating.
+            </p>
+            {stuck[0]?.lastError && (
+              <p className="mt-1 text-xs muted">Last error: {stuck[0].lastError}</p>
+            )}
+            <p className="mt-1 text-xs muted">
+              Re-sync by hand below — a successful run clears this.
+            </p>
+          </div>
+        )}
       </section>
 
       {/* ── venue questions ─────────────────────────────────────────────── */}
@@ -284,6 +353,16 @@ export default async function AdminShowsPage() {
                   {performer.firstDate.slice(0, 4)}–
                   {performer.lastDate.slice(0, 4)} · {performer.withSetlists}{" "}
                   with setlists
+                </span>
+                <span
+                  className="text-xs"
+                  style={{
+                    color: refreshByLabel.get(performer.label)?.stuck
+                      ? "#f05252"
+                      : "var(--muted)",
+                  }}
+                >
+                  {describeRefresh(refreshByLabel.get(performer.label))}
                 </span>
                 <span className="flex-1" />
                 {available && !running && (

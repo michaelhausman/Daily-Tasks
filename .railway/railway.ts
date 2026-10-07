@@ -51,6 +51,7 @@ export default defineRailway(() => {
       ADMIN_HANDLES: preserve(),
       DATABASE_URL: preserve(),
       SETLISTFM_API_KEY: preserve(),
+      SHOW_REFRESH_DAYS: preserve(),
       SIGNUP_INVITE_CODE: preserve(),
       STORAGE_ROOT: preserve(),
       TAKEDOWN_CONTACT_EMAIL: preserve(),
