@@ -7,6 +7,7 @@ import { isAdmin } from "@/lib/config";
 import { mergeTags } from "@/lib/moderation/service";
 import type { SetlistFmArtist } from "./setlistfm";
 import {
+  markPlaceReviewed,
   recordVenueDecision,
   retryImport,
   startArtistSync,
@@ -119,6 +120,28 @@ export async function mergeVenuesAction(
   return {
     ok: `Merged ${merged} ${merged === 1 ? "spelling" : "spellings"} — one page now.`,
   };
+}
+
+/**
+ * "This invented place is real, stop showing it to me."
+ *
+ * Deliberately not a delete: the upload that created it is someone's, and the
+ * place may be the only record of a venue no database has. Reviewing is just
+ * a note that a person looked.
+ */
+export async function keepPlaceAction(
+  _prev: SyncState,
+  formData: FormData,
+): Promise<SyncState> {
+  const user = await requireAdmin();
+  if (!user) return { error: "Not allowed." };
+
+  const tagId = String(formData.get("tagId") ?? "");
+  if (!tagId) return { error: "No place given." };
+
+  await markPlaceReviewed(tagId);
+  revalidatePath("/admin/shows");
+  return { ok: "Kept." };
 }
 
 /** "Two different places that happened to share a night." */

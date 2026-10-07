@@ -8,7 +8,6 @@ import {
   separateVenuesAction,
   type SyncState,
 } from "@/lib/shows/actions";
-import type { VenueQuestion } from "@/lib/shows/sync";
 
 function Submit({
   label,
@@ -38,16 +37,37 @@ function Submit({
   );
 }
 
+export type PlaceCandidate = {
+  tagId: string;
+  label: string;
+  venue: string;
+  showCount: number;
+  /** Context that helps the call: who played, or how many uploads. */
+  detail?: string;
+};
+
 /**
- * One night where a city holds shows under two place names.
+ * One "are these the same room?" question.
  *
  * Every spelling gets a "keep this one" button, which merges the others into
  * it, because which spelling survives is a real choice: the established one
- * has the pages people may already have posted to. The alternative — "these
- * are two different rooms" — is equally a real answer, and has to be
- * recordable or the same question comes back on the next re-sync.
+ * owns the pages people may already have posted to. The opposite answer —
+ * genuinely two rooms — has to be recordable too, or the same question comes
+ * back after every re-sync until someone clicks the wrong button to stop it.
+ *
+ * With `eventDate`, the two names collided on one night and "different" is
+ * recorded for that night alone. Without it, the question came from comparing
+ * names across a whole city, and the answer stands for every date.
  */
-export function VenueForm({ question }: { question: VenueQuestion }) {
+export function VenueForm({
+  city,
+  eventDate,
+  places,
+}: {
+  city: string;
+  eventDate?: string;
+  places: PlaceCandidate[];
+}) {
   const [mergeState, mergeAction] = useActionState<SyncState, FormData>(
     mergeVenuesAction,
     {},
@@ -61,34 +81,33 @@ export function VenueForm({ question }: { question: VenueQuestion }) {
   return (
     <li className="py-3" style={{ borderColor: "var(--border)" }}>
       <p className="text-sm font-medium">
-        {question.city}
-        <span className="muted"> · {question.eventDate}</span>
+        {city}
+        {eventDate && <span className="muted"> · {eventDate}</span>}
       </p>
 
       <ul className="mt-1.5 space-y-1 text-sm">
-        {question.places.map((place) => (
+        {places.map((place) => (
           <li key={place.tagId} className="flex flex-wrap items-baseline gap-2">
             <span className="font-medium">{place.venue}</span>
             <span className="text-xs muted">
               {place.showCount} {place.showCount === 1 ? "show" : "shows"}
-              {place.performers.length > 0 &&
-                ` · ${place.performers.join(", ")}`}
+              {place.detail && ` · ${place.detail}`}
             </span>
           </li>
         ))}
       </ul>
 
       <div className="mt-2.5 flex flex-wrap items-center gap-2">
-        {question.places.map((keep) => (
+        {places.map((keep) => (
           <form key={keep.tagId} action={mergeAction} className="inline">
-            <input type="hidden" name="city" value={question.city} />
+            <input type="hidden" name="city" value={city} />
             <input type="hidden" name="intoId" value={keep.tagId} />
-            {question.places
+            {places
               .filter((p) => p.tagId !== keep.tagId)
               .map((p) => (
                 <input key={p.tagId} type="hidden" name="fromId" value={p.tagId} />
               ))}
-            {question.places.map((p) => (
+            {places.map((p) => (
               <input key={p.tagId} type="hidden" name="label" value={p.label} />
             ))}
             <Submit label={`Same room — keep “${keep.venue}”`} tone="primary" />
@@ -96,9 +115,11 @@ export function VenueForm({ question }: { question: VenueQuestion }) {
         ))}
 
         <form action={splitAction} className="inline">
-          <input type="hidden" name="city" value={question.city} />
-          <input type="hidden" name="eventDate" value={question.eventDate} />
-          {question.places.map((p) => (
+          <input type="hidden" name="city" value={city} />
+          {eventDate && (
+            <input type="hidden" name="eventDate" value={eventDate} />
+          )}
+          {places.map((p) => (
             <input key={p.tagId} type="hidden" name="label" value={p.label} />
           ))}
           <Submit label="Different places" />

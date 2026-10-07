@@ -1,10 +1,10 @@
-import { and, asc, eq, sql } from "drizzle-orm";
+import { and, asc, eq, sql, type SQL } from "drizzle-orm";
 
 import { db } from "@/lib/db";
 import { shows, tags } from "@/lib/db/schema";
 import { newId } from "@/lib/ids";
 import { asDateString, rowsOf } from "@/lib/media/queries";
-import { isValidEventDate } from "@/lib/tags/normalize";
+import { isValidEventDate, matchKey } from "@/lib/tags/normalize";
 import { resolveTag } from "@/lib/tags/service";
 
 /** One row of a touring history, as the data files in data/shows/ hold it. */
@@ -248,6 +248,106 @@ export async function listShowsFor(
       mediaCount: Number(r.media_count),
     })),
   };
+}
+
+export type ShowMatch = {
+  id: string;
+  eventDate: string;
+  performer: { slug: string; label: string };
+  where: { slug: string; label: string };
+  city: string | null;
+  region: string | null;
+  tour: string | null;
+  /** Visible uploads already in this moment. */
+  mediaCount: number;
+};
+
+/**
+ * Find shows for someone about to upload.
+ *
+ * This is the other half of importing a touring history, and the more
+ * important half for data quality. Asking "which venue was it?" invites a
+ * free-text answer, and a free-text answer is where the curated place list
+ * grows siblings — "Wilbur Theater" next to "The Wilbur Theatre, Boston".
+ * Asking "which show were you at?" invites a *pick*, and a pick carries the
+ * canonical place and date with it, unspellable and unambiguous.
+ *
+ * A photo almost always knows its own date, so the common case is a date with
+ * no text at all: two or three shows happened anywhere in the world that
+ * night, and one of them is nearly always theirs.
+ */
+export async function searchShows(opts: {
+  query?: string;
+  date?: string;
+  limit?: number;
+}): Promise<ShowMatch[]> {
+  const limit = Math.min(opts.limit ?? 12, 50);
+  const key = opts.query ? matchKey(opts.query) : "";
+  const date = opts.date && isValidEventDate(opts.date) ? opts.date : null;
+
+  // Without either, there is nothing to narrow a few thousand shows by.
+  if (!key && !date) return [];
+
+  const conditions: SQL[] = [];
+  if (date) conditions.push(sql`s.event_date = ${date}`);
+  if (key) {
+    conditions.push(sql`(
+      pt.match_key LIKE ${`%${key}%`}
+      OR wt.match_key LIKE ${`%${key}%`}
+      OR lower(s.city) LIKE ${`%${key}%`}
+    )`);
+  }
+
+  const result = await db.execute(sql`
+    SELECT
+      s.id,
+      s.event_date,
+      pt.slug  AS performer_slug,
+      pt.label AS performer_label,
+      wt.slug  AS where_slug,
+      wt.label AS where_label,
+      s.city,
+      s.region,
+      s.tour,
+      (
+        SELECT COUNT(DISTINCT m.id)
+        FROM media m
+          INNER JOIN media_tags mt ON mt.media_id = m.id
+        WHERE mt.tag_id = wt.id
+          AND m.event_date = s.event_date
+          AND m.status = 'ready'
+          AND m.visibility = 'public'
+          AND m.hidden_at IS NULL
+      ) AS media_count
+    FROM shows s
+      INNER JOIN tags pt ON pt.id = s.who_tag_id
+      INNER JOIN tags wt ON wt.id = s.where_tag_id
+    WHERE ${sql.join(conditions, sql` AND `)}
+    ORDER BY s.event_date DESC, pt.label
+    LIMIT ${limit}
+  `);
+
+  return rowsOf<{
+    id: string;
+    event_date: string | Date;
+    performer_slug: string;
+    performer_label: string;
+    where_slug: string;
+    where_label: string;
+    city: string | null;
+    region: string | null;
+    tour: string | null;
+    media_count: string | number;
+  }>(result).map((r) => ({
+    id: r.id,
+    eventDate: asDateString(r.event_date),
+    performer: { slug: r.performer_slug, label: r.performer_label },
+    where: { slug: r.where_slug, label: r.where_label },
+    city: r.city,
+    region: r.region,
+    tour: r.tour,
+    mediaCount: Number(r.media_count),
+  }));
 }
 
 /** How many known shows a performer has — for linking to their history. */

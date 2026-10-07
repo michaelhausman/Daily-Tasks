@@ -8,6 +8,7 @@
  *
  * API: https://api.setlist.fm/docs/1.0/index.html
  */
+import { matchKey } from "@/lib/tags/normalize";
 import type { ShowInput } from "./service";
 
 const API = "https://api.setlist.fm/rest/1.0";
@@ -182,19 +183,12 @@ export function mergeSameShow(rows: ShowInput[]): ShowInput[] {
   );
 }
 
-/** Venue name reduced to what survives spelling differences between sources. */
-function venueKey(name: string): string {
-  return name
-    .normalize("NFKD")
-    .replace(/\p{M}+/gu, "")
-    .toLowerCase()
-    .replace(/\btheatre\b/g, "theater")
-    .replace(/&/g, " and ")
-    .replace(/[^a-z0-9]+/g, " ")
-    .replace(/\b(the|and)\b/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-}
+/**
+ * Venue name reduced to what survives spelling differences between sources.
+ * Shared with the uploader's typeahead, which has the same job in the other
+ * direction: finding the venue someone meant from what they typed.
+ */
+const venueKey = matchKey;
 
 /**
  * A person's call on two names in one city: the same room (`names` lists every

@@ -170,6 +170,12 @@ export const tags = pgTable(
     /** Human-facing form, as first typed by whoever created the tag. */
     label: text("label").notNull(),
     /**
+     * Looser key for "did you mean", never for identity — see `matchKey`.
+     * Denormalized onto the row so suggesting can filter in SQL; computing it
+     * per keystroke would mean loading every tag into memory.
+     */
+    matchKey: text("match_key"),
+    /**
      * Alias pointer. When two tags turn out to mean the same thing ("Aimee" and
      * "Aimee Mann"), the loser points at the winner and writes follow the
      * pointer. Nothing in v1 populates this, but the merge tool it exists for
@@ -177,6 +183,12 @@ export const tags = pgTable(
      */
     canonicalTagId: text("canonical_tag_id"),
     usageCount: integer("usage_count").notNull().default(0),
+    /**
+     * Set when an admin has looked at a place someone invented and decided it
+     * is real. Only meaningful for `where` tags with no shows behind them —
+     * the review list on /admin/shows is exactly those, unreviewed.
+     */
+    reviewedAt: timestamp("reviewed_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -184,6 +196,7 @@ export const tags = pgTable(
   (t) => [
     uniqueIndex("tags_facet_slug_unique").on(t.facet, t.slug),
     index("tags_usage_idx").on(t.facet, t.usageCount),
+    index("tags_match_idx").on(t.facet, t.matchKey),
   ],
 );
 

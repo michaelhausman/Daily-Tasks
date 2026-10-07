@@ -3,9 +3,15 @@ import { notFound } from "next/navigation";
 
 import { getCurrentUser } from "@/lib/auth/session";
 import { isAdmin } from "@/lib/config";
-import { retrySyncAction, startSyncAction } from "@/lib/shows/actions";
+import {
+  keepPlaceAction,
+  retrySyncAction,
+  startSyncAction,
+} from "@/lib/shows/actions";
 import {
   activeImport,
+  duplicatePlaces,
+  inventedPlaces,
   loadedPerformers,
   recentImports,
   showStats,
@@ -69,13 +75,16 @@ export default async function AdminShowsPage() {
   const user = await getCurrentUser();
   if (!user || !isAdmin(user.handle)) notFound();
 
-  const [running, history, performers, questions, stats] = await Promise.all([
-    activeImport(),
-    recentImports(6),
-    loadedPerformers(),
-    venueQuestions(),
-    showStats(),
-  ]);
+  const [running, history, performers, questions, clusters, invented, stats] =
+    await Promise.all([
+      activeImport(),
+      recentImports(6),
+      loadedPerformers(),
+      venueQuestions(),
+      duplicatePlaces(),
+      inventedPlaces(),
+      showStats(),
+    ]);
 
   const available = syncAvailable();
 
@@ -156,8 +165,91 @@ export default async function AdminShowsPage() {
             {questions.map((question) => (
               <VenueForm
                 key={`${question.city}|${question.eventDate}`}
-                question={question}
+                city={question.city}
+                eventDate={question.eventDate}
+                places={question.places.map((p) => ({
+                  ...p,
+                  detail: p.performers.join(", "),
+                }))}
               />
+            ))}
+          </ul>
+        </section>
+      )}
+
+      {/* ── same-city duplicates, any date ──────────────────────────────── */}
+      {clusters.length > 0 && (
+        <section>
+          <h2 className="mb-1 text-lg font-bold">
+            Possible duplicate places
+            <span className="ml-2 text-sm font-normal muted">
+              {clusters.length}
+            </span>
+          </h2>
+          <p className="mb-3 max-w-2xl text-sm muted">
+            Names in the same city that fold to the same thing once articles,
+            punctuation and theatre/theater are set aside — whether or not they
+            ever shared a night. The questions above only catch spellings that
+            collided on one date; these are the rest.
+          </p>
+          <ul className="divide-y" style={{ borderColor: "var(--border)" }}>
+            {clusters.map((cluster) => (
+              <VenueForm
+                key={cluster.places.map((p) => p.tagId).join("|")}
+                city={cluster.city}
+                places={cluster.places.map((p) => ({
+                  ...p,
+                  detail:
+                    p.uploadCount > 0
+                      ? `${p.uploadCount} ${p.uploadCount === 1 ? "upload" : "uploads"}`
+                      : undefined,
+                }))}
+              />
+            ))}
+          </ul>
+        </section>
+      )}
+
+      {/* ── places people invented ──────────────────────────────────────── */}
+      {invented.length > 0 && (
+        <section>
+          <h2 className="mb-1 text-lg font-bold">
+            New places from uploads
+            <span className="ml-2 text-sm font-normal muted">
+              {invented.length}
+            </span>
+          </h2>
+          <p className="mb-3 max-w-2xl text-sm muted">
+            Places somebody typed while uploading, with no imported show behind
+            them. Most are real — a club that closed in 1979, a festival field,
+            someone&rsquo;s porch. Worth a glance anyway: a venue invented
+            beside one that already exists is the mistake that hides best,
+            because it looks completely normal to whoever made it.
+          </p>
+          <ul className="divide-y" style={{ borderColor: "var(--border)" }}>
+            {invented.map((place) => (
+              <li
+                key={place.tagId}
+                className="flex flex-wrap items-center gap-x-3 gap-y-1.5 py-3 text-sm"
+              >
+                <Link
+                  href={`/explore?where=${place.slug}`}
+                  className="font-medium hover:opacity-80"
+                >
+                  {place.label}
+                </Link>
+                <span className="text-xs muted">
+                  {place.uploadCount}{" "}
+                  {place.uploadCount === 1 ? "upload" : "uploads"} ·{" "}
+                  {ago(place.createdAt)}
+                </span>
+                <span className="flex-1" />
+                <ModForm
+                  action={keepPlaceAction}
+                  label="Looks right"
+                  fields={{ tagId: place.tagId }}
+                />
+              </li>
             ))}
           </ul>
         </section>

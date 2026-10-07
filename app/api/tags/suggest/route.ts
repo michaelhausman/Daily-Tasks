@@ -22,6 +22,13 @@ export async function GET(request: NextRequest) {
       slug: t.slug,
       label: t.label,
       usageCount: t.usageCount,
+      // Imported shows: what makes a venue nobody has posted from yet worth
+      // showing. Sent so the dropdown can say "35 shows" instead of
+      // "0 uploads", which reads as if the place were unknown.
+      showCount: t.showCount,
+      // Lets the client spot "this is the same place, spelled differently"
+      // without a second round trip on every keystroke.
+      matchKey: t.matchKey ?? "",
     })),
   });
 }

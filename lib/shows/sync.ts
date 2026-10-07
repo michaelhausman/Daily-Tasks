@@ -11,6 +11,7 @@ import {
 } from "@/lib/db/schema";
 import { newId } from "@/lib/ids";
 import { asDateString, rowsOf } from "@/lib/media/queries";
+import { matchKey } from "@/lib/tags/normalize";
 import { SETLISTFM_API_KEY } from "@/lib/config";
 import {
   alignVenues,
@@ -514,6 +515,172 @@ export async function clearVenueDecisions(city: string, names: string[]): Promis
   for (const id of ids) {
     await db.delete(venueDecisions).where(eq(venueDecisions.id, id));
   }
+}
+
+export type PlaceCluster = {
+  city: string;
+  places: Array<{
+    tagId: string;
+    label: string;
+    venue: string;
+    showCount: number;
+    uploadCount: number;
+  }>;
+};
+
+/**
+ * Place tags in one city that look like the same room, whatever the dates.
+ *
+ * The venue questions above only fire when two spellings collide on the same
+ * night, which is a safe signal but a narrow one: two spellings of one room
+ * that never happen to share a date are invisible to it, and a third artist's
+ * touring history is exactly how that happens. This asks the same question
+ * from the other direction — comparing names within a city rather than within
+ * a night — using the same folding the importer uses, so "The Birchmere" and
+ * "Birchmere" match whether or not anyone played both.
+ *
+ * Only ever a prompt. Two rooms really can be "Theatre A" and "Theater B".
+ */
+export async function duplicatePlaces(limit = 40): Promise<PlaceCluster[]> {
+  const result = await db.execute(sql`
+    SELECT
+      t.id,
+      t.label,
+      t.usage_count,
+      (SELECT COUNT(*) FROM shows s WHERE s.where_tag_id = t.id) AS show_count
+    FROM tags t
+    WHERE t.facet = 'where' AND t.canonical_tag_id IS NULL
+  `);
+
+  const rows = rowsOf<{
+    id: string;
+    label: string;
+    usage_count: number;
+    show_count: string | number;
+  }>(result);
+
+  // City is the last comma-separated piece, which is how showPlaceLabel builds
+  // these and how people type them. A label with no comma is a city itself.
+  const byCity = new Map<string, PlaceCluster["places"]>();
+  for (const row of rows) {
+    const comma = row.label.lastIndexOf(", ");
+    if (comma < 1) continue;
+    const city = row.label.slice(comma + 2).trim();
+    const venue = row.label.slice(0, comma).trim();
+    if (!city || !venue) continue;
+
+    const list = byCity.get(city.toLowerCase()) ?? [];
+    list.push({
+      tagId: row.id,
+      label: row.label,
+      venue,
+      showCount: Number(row.show_count),
+      uploadCount: row.usage_count,
+    });
+    byCity.set(city.toLowerCase(), list);
+  }
+
+  const decisions = await storedVenueDecisions();
+  const clusters: PlaceCluster[] = [];
+
+  for (const places of byCity.values()) {
+    if (places.length < 2) continue;
+    const city = places[0].label.slice(places[0].label.lastIndexOf(", ") + 2);
+
+    // Compare the venue halves: the city is common to all of them here, and
+    // leaving it in drowns out the difference that matters.
+    const keys = new Map(places.map((p) => [p.tagId, matchKey(p.venue)]));
+    const used = new Set<string>();
+
+    for (const place of places) {
+      if (used.has(place.tagId)) continue;
+      const key = keys.get(place.tagId)!;
+      const group = places.filter(
+        (other) => !used.has(other.tagId) && looksLikeSamePlace(key, keys.get(other.tagId)!),
+      );
+      if (group.length < 2) continue;
+      for (const g of group) used.add(g.tagId);
+
+      const cluster: PlaceCluster = {
+        city,
+        places: group.sort((a, b) => b.showCount - a.showCount),
+      };
+      if (clusterAnswered(cluster, decisions)) continue;
+      clusters.push(cluster);
+      if (clusters.length >= limit) return clusters;
+    }
+  }
+
+  return clusters;
+}
+
+/** Equal once folded, or one name contained in the other. */
+function looksLikeSamePlace(a: string, b: string): boolean {
+  if (!a || !b) return false;
+  if (a === b) return true;
+  const [short, long] = a.length < b.length ? [a, b] : [b, a];
+  // Long enough that containment isn't a coincidence — the same threshold
+  // alignVenues uses when matching an import against what's on file.
+  return short.length >= 8 && ` ${long} `.includes(` ${short} `);
+}
+
+function clusterAnswered(
+  cluster: PlaceCluster,
+  decisions: VenueDecision[],
+): boolean {
+  const venues = cluster.places.map((p) => p.venue);
+  return decisions.some(
+    (d) =>
+      d.city.toLowerCase() === cluster.city.toLowerCase() &&
+      venues.every((v) => d.names.includes(v)),
+  );
+}
+
+export type InventedPlace = {
+  tagId: string;
+  slug: string;
+  label: string;
+  uploadCount: number;
+  createdAt: Date;
+};
+
+/**
+ * Places someone made up while uploading — no imported show stands behind
+ * them.
+ *
+ * Most will be legitimate: a club that closed in 1979, a festival field, a
+ * friend's porch. The point isn't to prevent those, it's to see them. A venue
+ * invented next to one that already exists is the failure mode that hides
+ * best, because everything looks fine to the person who caused it.
+ */
+export async function inventedPlaces(limit = 30): Promise<InventedPlace[]> {
+  const rows = await db
+    .select({
+      tagId: tags.id,
+      slug: tags.slug,
+      label: tags.label,
+      uploadCount: tags.usageCount,
+      createdAt: tags.createdAt,
+    })
+    .from(tags)
+    .where(
+      sql`${tags.facet} = 'where'
+        AND ${tags.canonicalTagId} IS NULL
+        AND ${tags.reviewedAt} IS NULL
+        AND ${tags.usageCount} > 0
+        AND NOT EXISTS (SELECT 1 FROM shows s WHERE s.where_tag_id = ${tags.id})`,
+    )
+    .orderBy(desc(tags.createdAt))
+    .limit(limit);
+
+  return rows;
+}
+
+export async function markPlaceReviewed(tagId: string): Promise<void> {
+  await db
+    .update(tags)
+    .set({ reviewedAt: new Date() })
+    .where(eq(tags.id, tagId));
 }
 
 export type LoadedPerformer = {

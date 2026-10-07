@@ -1,6 +1,8 @@
-import { sql } from "drizzle-orm";
+import { eq, isNull, sql } from "drizzle-orm";
 
+import { matchKey } from "@/lib/tags/normalize";
 import { db } from "./index";
+import { tags } from "./schema";
 
 /**
  * Schema is small and stable enough that hand-written idempotent DDL beats
@@ -177,6 +179,12 @@ const STATEMENTS = [
   )`,
   `CREATE INDEX IF NOT EXISTS show_imports_created_idx ON show_imports (created_at)`,
 
+  // Looser-than-slug key for "did you mean", and the review mark for places
+  // somebody invented. Added rather than baked in, for existing deployments.
+  `ALTER TABLE tags ADD COLUMN IF NOT EXISTS match_key TEXT`,
+  `ALTER TABLE tags ADD COLUMN IF NOT EXISTS reviewed_at TIMESTAMPTZ`,
+  `CREATE INDEX IF NOT EXISTS tags_match_idx ON tags (facet, match_key)`,
+
   `CREATE TABLE IF NOT EXISTS venue_decisions (
     id TEXT PRIMARY KEY,
     city TEXT NOT NULL,
@@ -258,4 +266,36 @@ export async function runMigrations() {
       WHEN duplicate_object THEN NULL;
     END $$;`),
   );
+
+  await backfillMatchKeys();
+}
+
+/**
+ * Fill in `tags.match_key` for rows that predate the column.
+ *
+ * The one piece of data migration here rather than DDL, because the key folds
+ * theatre/theater and strips articles — rules that live in TypeScript and have
+ * no SQL equivalent worth maintaining twice. Runs at every boot, but only
+ * touches rows where the column is still null, so it does nothing after the
+ * first time.
+ */
+async function backfillMatchKeys(): Promise<void> {
+  for (;;) {
+    const pending = await db
+      .select({ id: tags.id, label: tags.label })
+      .from(tags)
+      .where(isNull(tags.matchKey))
+      .limit(500);
+
+    if (pending.length === 0) return;
+
+    for (const tag of pending) {
+      await db
+        .update(tags)
+        // Empty string, not null, for a label with nothing left after folding
+        // — otherwise it would be picked up again on every boot forever.
+        .set({ matchKey: matchKey(tag.label) })
+        .where(eq(tags.id, tag.id));
+    }
+  }
 }

@@ -1,9 +1,9 @@
-import { and, desc, eq, inArray, like, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, like, or, sql, type SQL } from "drizzle-orm";
 
 import { db } from "@/lib/db";
-import { tags, type Facet, type Tag } from "@/lib/db/schema";
+import { shows, tags, type Facet, type Tag } from "@/lib/db/schema";
 import { newId } from "@/lib/ids";
-import { cleanLabel, slugify } from "./normalize";
+import { cleanLabel, matchKey, slugify } from "./normalize";
 
 export type TagInput = { facet: Facet; label: string };
 
@@ -31,7 +31,7 @@ export async function resolveTag(facet: Facet, rawLabel: string): Promise<Tag | 
     try {
       const inserted = await db
         .insert(tags)
-        .values({ id, facet, slug, label })
+        .values({ id, facet, slug, label, matchKey: matchKey(label) })
         .returning();
       tag = inserted[0];
     } catch {
@@ -83,43 +83,131 @@ export async function bumpUsage(tagIds: string[], delta = 1): Promise<void> {
     .where(inArray(tags.id, tagIds));
 }
 
+export type Suggestion = Tag & {
+  /** Imported shows behind this tag — what makes it a known venue or artist. */
+  showCount: number;
+};
+
 /**
  * Typeahead. This is the primary defence against tag fragmentation — showing
  * "Aimee Mann (14)" while someone types "aim" is far more effective than any
  * after-the-fact merge tool, because it prevents the duplicate being created.
+ *
+ * Two things make it work against a curated list rather than against it.
+ *
+ * It matches on the loose key as well as the slug, so "wilbur theater" finds
+ * "The Wilbur Theatre, Boston" instead of reporting nothing and offering to
+ * create a sibling. And it counts imported shows, not just uploads: a venue
+ * loaded from a touring history has a usage count of zero until somebody posts
+ * from it, which would otherwise rank the whole curated list beneath any tag
+ * a single person had used once.
  */
 export async function suggestTags(
   facet: Facet,
   query: string,
   limit = 8,
-): Promise<Tag[]> {
+): Promise<Suggestion[]> {
   const slug = slugify(query);
+  const key = matchKey(query);
+
+  const matches: SQL[] = [];
+  if (slug) matches.push(like(tags.slug, `%${slug}%`));
+  if (key) matches.push(like(tags.matchKey, `%${key}%`));
 
   const rows = await db
     .select()
     .from(tags)
     .where(
-      slug
-        ? and(
-            eq(tags.facet, facet),
-            like(tags.slug, `%${slug}%`),
-            sql`${tags.canonicalTagId} IS NULL`,
-          )
-        : and(eq(tags.facet, facet), sql`${tags.canonicalTagId} IS NULL`),
+      and(
+        eq(tags.facet, facet),
+        sql`${tags.canonicalTagId} IS NULL`,
+        ...(matches.length > 0 ? [or(...matches)!] : []),
+      ),
     )
-    .orderBy(desc(tags.usageCount), tags.slug)
-    .limit(limit * 3);
+    .orderBy(desc(tags.usageCount), tags.label)
+    // Widened because ordering by usage alone no longer reflects the final
+    // ranking: a known venue with no uploads has to survive this cut.
+    .limit(limit * 8);
 
-  if (!slug) return rows.slice(0, limit);
+  const withShows = await showCounts(rows.map((t) => t.id));
+  const suggestions: Suggestion[] = rows.map((t) => ({
+    ...t,
+    showCount: withShows.get(t.id) ?? 0,
+  }));
 
-  // Prefer prefix matches over substring matches, then by popularity.
-  return rows
-    .sort((a, b) => {
-      const aPrefix = a.slug.startsWith(slug) ? 0 : 1;
-      const bPrefix = b.slug.startsWith(slug) ? 0 : 1;
-      if (aPrefix !== bPrefix) return aPrefix - bPrefix;
-      return b.usageCount - a.usageCount;
+  if (!slug && !key) {
+    return suggestions
+      .sort((a, b) => b.showCount - a.showCount || b.usageCount - a.usageCount)
+      .slice(0, limit);
+  }
+
+  return suggestions.sort((a, b) => rank(a, slug, key) - rank(b, slug, key)).slice(0, limit);
+}
+
+/**
+ * Lower is better. Exactness first, then whether the tag is something we know
+ * is real, and popularity only as a tiebreak — a curated venue should beat a
+ * busy one-off, because the busy one-off is often the duplicate.
+ */
+function rank(tag: Suggestion, slug: string, key: string): number {
+  let score = 0;
+  if (tag.slug === slug) score -= 1000;
+  else if (key && tag.matchKey === key) score -= 800;
+  else if (slug && tag.slug.startsWith(slug)) score -= 400;
+  else if (key && tag.matchKey?.startsWith(key)) score -= 300;
+
+  if (tag.showCount > 0) score -= 100;
+  // Compressed so a tag with a thousand uploads can't outrank exactness.
+  score -= Math.min(50, Math.log10(1 + tag.usageCount) * 20);
+  score -= Math.min(30, Math.log10(1 + tag.showCount) * 10);
+  return score;
+}
+
+async function showCounts(tagIds: string[]): Promise<Map<string, number>> {
+  const counts = new Map<string, number>();
+  if (tagIds.length === 0) return counts;
+
+  const rows = await db
+    .select({
+      whoTagId: shows.whoTagId,
+      whereTagId: shows.whereTagId,
+      n: sql<string>`count(*)`,
     })
+    .from(shows)
+    .where(
+      or(inArray(shows.whoTagId, tagIds), inArray(shows.whereTagId, tagIds)),
+    )
+    .groupBy(shows.whoTagId, shows.whereTagId);
+
+  const wanted = new Set(tagIds);
+  for (const row of rows) {
+    for (const id of [row.whoTagId, row.whereTagId]) {
+      if (!wanted.has(id)) continue;
+      counts.set(id, (counts.get(id) ?? 0) + Number(row.n));
+    }
+  }
+  return counts;
+}
+
+/**
+ * Tags whose loose key matches, excluding ones that already match exactly.
+ *
+ * This is the "did you mean" set: what to show someone who is about to invent
+ * a place that already exists under a slightly different spelling.
+ */
+export async function nearMatches(
+  facet: Facet,
+  label: string,
+  limit = 3,
+): Promise<Suggestion[]> {
+  const key = matchKey(label);
+  const slug = slugify(label);
+  if (!key) return [];
+
+  const found = await suggestTags(facet, label, limit + 3);
+  return found
+    .filter((t) => t.slug !== slug)
+    .filter((t) => t.matchKey === key || t.matchKey?.includes(key) || key.includes(t.matchKey ?? "\0"))
     .slice(0, limit);
 }
 

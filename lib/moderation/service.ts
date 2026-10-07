@@ -12,7 +12,7 @@ import {
 } from "@/lib/db/schema";
 import { newId } from "@/lib/ids";
 import { repointShows } from "@/lib/shows/service";
-import { slugify } from "@/lib/tags/normalize";
+import { matchKey, slugify } from "@/lib/tags/normalize";
 import { bumpUsage } from "@/lib/tags/service";
 
 // ─── hide / unhide ───────────────────────────────────────────────────────────
@@ -287,7 +287,12 @@ export async function renameTag(
     };
   }
 
-  await db.update(tags).set({ label, slug }).where(eq(tags.id, tagId));
+  // The loose key is derived from the label, so renaming has to recompute it
+  // or suggestions keep matching the old spelling.
+  await db
+    .update(tags)
+    .set({ label, slug, matchKey: matchKey(label) })
+    .where(eq(tags.id, tagId));
   return { ok: true };
 }
 

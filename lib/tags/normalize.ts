@@ -23,6 +23,36 @@ export function slugify(input: string): string {
     .slice(0, 80);
 }
 
+/**
+ * A looser key than the slug, for finding tags someone *meant*.
+ *
+ * The slug is identity: two labels with the same slug are the same tag, and it
+ * has to be strict or unrelated things collide. But strictness cuts both ways
+ * — "The Wilbur Theatre, Boston" and "wilbur theater" have different slugs, so
+ * an American typing the American spelling is told no such venue exists and is
+ * offered a brand new one. That is how a curated venue list quietly grows
+ * siblings.
+ *
+ * So this folds the differences that are spelling rather than meaning:
+ * theatre/theater, ampersands, accents, punctuation, and the leading articles
+ * venues are inconsistently written with. It is used for suggesting and for
+ * spotting duplicates, never for identity — two tags sharing a match key are a
+ * question to ask, not a merge to perform.
+ */
+export function matchKey(input: string): string {
+  return input
+    .normalize("NFKD")
+    .replace(/\p{M}+/gu, "")
+    .toLowerCase()
+    .replace(/\btheatre\b/g, "theater")
+    .replace(/&/g, " and ")
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\b(the|and)\b/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 120);
+}
+
 /** Collapse whitespace so labels don't differ only by spacing. */
 export function cleanLabel(input: string): string {
   return input.trim().replace(/\s+/g, " ").slice(0, 120);

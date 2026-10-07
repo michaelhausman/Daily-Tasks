@@ -3,15 +3,39 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import type { Facet } from "@/lib/db/schema";
-import { slugify } from "@/lib/tags/normalize";
+import { matchKey, slugify } from "@/lib/tags/normalize";
 import { FACET_COLOR } from "./Chip";
 
-type Suggestion = { slug: string; label: string; usageCount: number };
+type Suggestion = {
+  slug: string;
+  label: string;
+  usageCount: number;
+  showCount: number;
+  matchKey: string;
+};
 
 /** A row in the dropdown: either an existing tag, or "make a new one". */
 type Option =
-  | { kind: "existing"; label: string; slug: string; usageCount: number }
+  | {
+      kind: "existing";
+      label: string;
+      slug: string;
+      usageCount: number;
+      showCount: number;
+    }
   | { kind: "create"; label: string };
+
+/**
+ * Two labels that differ only in spelling — "Wilbur Theater" against
+ * "The Wilbur Theatre, Boston". Not proof they're the same place, which is
+ * why this prompts rather than decides.
+ */
+function looksLikeSame(a: string, b: string): boolean {
+  if (!a || !b) return false;
+  if (a === b) return true;
+  const [short, long] = a.length < b.length ? [a, b] : [b, a];
+  return short.length >= 6 && ` ${long} `.includes(` ${short} `);
+}
 
 /**
  * Typeahead over existing tags, and the single most important piece of UI in
@@ -85,12 +109,29 @@ export function TagInput({
 
   const trimmed = draft.trim().replace(/\s+/g, " ");
 
+  /**
+   * An existing tag that the draft is probably a misspelling of.
+   *
+   * Only for places. A new performer or topic costs little — at worst an
+   * admin merges it later. A new venue is different: it silently forks the
+   * pool for a room that already has a page, and the person who did it sees
+   * their own upload sitting on an empty page looking perfectly normal.
+   */
+  const didYouMean = useMemo(() => {
+    if (facet !== "where" || !trimmed) return null;
+    const draftSlug = slugify(trimmed);
+    if (suggestions.some((s) => s.slug === draftSlug)) return null;
+    const key = matchKey(trimmed);
+    return suggestions.find((s) => looksLikeSame(key, s.matchKey)) ?? null;
+  }, [facet, suggestions, trimmed]);
+
   const options = useMemo<Option[]>(() => {
     const rows: Option[] = suggestions.map((s) => ({
       kind: "existing",
       label: s.label,
       slug: s.slug,
       usageCount: s.usageCount,
+      showCount: s.showCount,
     }));
 
     if (!trimmed) return rows;
@@ -196,6 +237,20 @@ export function TagInput({
         />
       </div>
 
+      {didYouMean && (
+        <p className="mt-1.5 text-xs" style={{ color: "#c27803" }}>
+          Did you mean{" "}
+          <button
+            type="button"
+            onClick={() => commit({ kind: "existing", ...didYouMean })}
+            className="font-semibold underline"
+          >
+            {didYouMean.label}
+          </button>
+          ? Same place under two names splits it into two pages.
+        </p>
+      )}
+
       {open && options.length > 0 && (
         <ul
           className="absolute z-20 mt-1 w-full overflow-hidden rounded-lg shadow-xl"
@@ -217,8 +272,15 @@ export function TagInput({
                   <>
                     <span>{option.label}</span>
                     <span className="shrink-0 text-xs muted">
-                      {option.usageCount}{" "}
-                      {option.usageCount === 1 ? "upload" : "uploads"}
+                      {/* Shows first: an imported venue has none of its own
+                          uploads yet, and "0 uploads" reads as unknown. */}
+                      {option.showCount > 0
+                        ? `${option.showCount.toLocaleString()} ${
+                            option.showCount === 1 ? "show" : "shows"
+                          }`
+                        : `${option.usageCount} ${
+                            option.usageCount === 1 ? "upload" : "uploads"
+                          }`}
                     </span>
                   </>
                 ) : (
@@ -226,13 +288,20 @@ export function TagInput({
                     <span>
                       <span
                         className="mr-1.5 font-semibold"
-                        style={{ color }}
+                        style={{ color: didYouMean ? "#c27803" : color }}
                       >
                         +
                       </span>
                       Add <strong>{option.label}</strong>
                     </span>
-                    <span className="shrink-0 text-xs muted">new tag</span>
+                    <span
+                      className="shrink-0 text-xs"
+                      style={{
+                        color: didYouMean ? "#c27803" : "var(--muted)",
+                      }}
+                    >
+                      {didYouMean ? "new place — sure?" : "new tag"}
+                    </span>
                   </>
                 )}
               </button>

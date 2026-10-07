@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useCallback, useRef, useState } from "react";
 
 import { TagInput } from "@/components/TagInput";
+import { ShowPicker, type PickedShow } from "./ShowPicker";
 
 type Stage = "idle" | "uploading" | "done" | "error";
 
@@ -28,6 +29,29 @@ export function UploadForm({ prefill = {} }: { prefill?: UploadPrefill }) {
   const [progress, setProgress] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
+
+  // A moment page's "Add yours" link already carries a canonical place and
+  // date, so arriving that way counts as having picked the show.
+  const [picked, setPicked] = useState<PickedShow | null>(
+    prefill.where && prefill.date
+      ? {
+          performer: prefill.who ?? "",
+          where: prefill.where,
+          eventDate: prefill.date,
+        }
+      : null,
+  );
+
+  function pickShow(show: PickedShow) {
+    setPicked(show);
+    // Replaces rather than appends: picking a show is a statement about which
+    // show this is, and leaving a half-typed venue behind would file the
+    // upload under both.
+    setWho(show.performer ? [show.performer] : []);
+    setWhere([show.where]);
+    setEventDate(show.eventDate);
+    setError(null);
+  }
 
   const pickFile = useCallback((next: File) => {
     setFile(next);
@@ -171,6 +195,13 @@ export function UploadForm({ prefill = {} }: { prefill?: UploadPrefill }) {
           </>
         )}
       </div>
+
+      <ShowPicker
+        eventDate={eventDate}
+        picked={picked}
+        onPick={pickShow}
+        onClear={() => setPicked(null)}
+      />
 
       <div className="grid gap-4 sm:grid-cols-2">
         <TagInput
