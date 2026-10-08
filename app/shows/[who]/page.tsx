@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 
 import { FACET_COLOR } from "@/components/Chip";
 import { listShowsFor, type ShowListing } from "@/lib/shows/service";
+import { listToursFor } from "@/lib/shows/tours";
 import { formatEventDate, isValidSlug } from "@/lib/tags/normalize";
 
 export const dynamic = "force-dynamic";
@@ -23,7 +24,10 @@ export default async function ShowsPage({
   const { who } = await params;
   if (!isValidSlug(who)) notFound();
 
-  const { performer, shows } = await listShowsFor(who);
+  const [{ performer, shows }, tours] = await Promise.all([
+    listShowsFor(who),
+    listToursFor(who),
+  ]);
   if (!performer || shows.length === 0) notFound();
 
   const byYear = new Map<string, ShowListing[]>();
@@ -63,6 +67,40 @@ export default async function ShowsPage({
           ))}
         </nav>
       </header>
+
+      {/* Tours read a career at a more useful altitude than a thousand
+          individual nights — and a cruise or a festival is the same shape. */}
+      {tours.length > 0 && (
+        <section className="surface rounded-2xl p-4 sm:p-5">
+          <h2 className="mb-2 text-lg font-bold">
+            Tours
+            <span className="ml-2 text-sm font-normal muted">
+              {tours.length}
+            </span>
+          </h2>
+          <ul className="divide-y">
+            {tours.map((tour) => (
+              <li key={tour.slug} style={{ borderColor: "var(--border)" }}>
+                <Link
+                  href={`/tour/${tour.slug}`}
+                  className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5 py-2 text-sm hover:opacity-80"
+                >
+                  <span className="font-medium">{tour.label}</span>
+                  <span className="text-xs muted">
+                    {tour.firstDate.slice(0, 4)}
+                    {tour.lastDate.slice(0, 4) !== tour.firstDate.slice(0, 4) &&
+                      `–${tour.lastDate.slice(0, 4)}`}{" "}
+                    · {tour.showCount}{" "}
+                    {tour.showCount === 1 ? "night" : "nights"} ·{" "}
+                    {tour.cityCount}{" "}
+                    {tour.cityCount === 1 ? "city" : "cities"}
+                  </span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       {years.map((year) => {
         const list = byYear.get(year)!;

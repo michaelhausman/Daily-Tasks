@@ -337,6 +337,17 @@ export const shows = pgTable(
     city: text("city"),
     region: text("region"),
     tour: text("tour"),
+    /**
+     * Identity for the tour, festival or cruise this show belongs to.
+     *
+     * Deliberately not scoped to the performer. A tour usually has one artist,
+     * but the case this exists for — a cruise, a festival — has many, and
+     * splitting those per performer would defeat the point of having the page
+     * at all. Two unrelated artists with a tour named the same generic thing
+     * would land on one page; the data has no such collision, and a visible
+     * wrong page beats an invisible missing one.
+     */
+    tourSlug: text("tour_slug"),
     /** Song titles in running order, as JSON — same convention as waveformJson. */
     setlistJson: text("setlist_json"),
     setlistUrl: text("setlist_url"),
@@ -352,6 +363,7 @@ export const shows = pgTable(
     ),
     index("shows_where_date_idx").on(t.whereTagId, t.eventDate),
     index("shows_event_date_idx").on(t.eventDate),
+    index("shows_tour_idx").on(t.tourSlug),
   ],
 );
 

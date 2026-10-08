@@ -48,6 +48,39 @@ Possible directions, none obviously right:
 
 Not a decision to take quickly.
 
+### Decided, 8 October 2026 — direction 3, three levels
+
+Michael's framing settled it: *"a moment is 1 event. A tour or a cruise is
+multiple events or moments."*
+
+| level | what it is | where it comes from |
+|---|---|---|
+| **Tour** | JoCo Cruise Crazy 2011, Lost In Space, a festival | imported, admin-curated |
+| **Moment** | one event — one place, one day | derived from uploads and shows |
+| **Topic** | encore, parking lot, soundcheck | typed by uploaders |
+
+Nothing below the moment changed, because the model already matched that
+definition: two performers at one venue on one night are a shared bill, which
+is one event and already one page — 107 of those on file. The parking lot hang
+is the same place on the same day as the show, so it's the same moment,
+narrowed by a topic tag. What was missing was only the level above.
+
+Two things made direction 3 safe where it hadn't looked it. The container
+already existed in the data — `shows.tour`, populated for 489 shows, including
+literally "JoCo Cruise Crazy 2011" across three places and five weeks — so it
+could be proven against real tours without asking anyone to invent anything.
+And because tours arrive through the admin import rather than from uploaders,
+the fragmentation risk that made a user-created `event` facet frightening does
+not apply.
+
+Deliberately **not** nesting beyond one level. His year → day → set hierarchy is
+real, but a festival fits without it: the container is the festival, and each
+stage-day is a moment, because a stage is a place. Every level added is a level
+people can disagree about.
+
+Still untested against anyone trying to post something that isn't a
+single-night concert. That remains the thing to watch.
+
 ---
 
 ## Already built
@@ -187,9 +220,8 @@ both of which need time and users.
 
 Reading it as one list, in order:
 
-1. **Decide the moment model.** Nesting, ranges, or neither. Everything about
-   location auto-matching depends on it, and it gets harder to change once
-   people have tagged things.
+1. ~~**Decide the moment model.**~~ Decided 8 Oct 2026 and built: a moment is
+   one event, and tours hold many. See above.
 2. **Fuzzy matching.** Small, closes a real hole, protects the core mechanic.
 3. **Search.** Cheap and obviously missing.
 4. **Decide about friends.** A product-shape question, not a feature request.

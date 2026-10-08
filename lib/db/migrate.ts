@@ -1,8 +1,8 @@
 import { eq, isNull, sql } from "drizzle-orm";
 
-import { matchKey } from "@/lib/tags/normalize";
+import { matchKey, slugify } from "@/lib/tags/normalize";
 import { db } from "./index";
-import { tags } from "./schema";
+import { shows, tags } from "./schema";
 
 /**
  * Schema is small and stable enough that hand-written idempotent DDL beats
@@ -179,6 +179,10 @@ const STATEMENTS = [
   )`,
   `CREATE INDEX IF NOT EXISTS show_imports_created_idx ON show_imports (created_at)`,
 
+  // Identity for the tour a show belongs to, so a tour has a page.
+  `ALTER TABLE shows ADD COLUMN IF NOT EXISTS tour_slug TEXT`,
+  `CREATE INDEX IF NOT EXISTS shows_tour_idx ON shows (tour_slug)`,
+
   // Looser-than-slug key for "did you mean", and the review mark for places
   // somebody invented. Added rather than baked in, for existing deployments.
   `ALTER TABLE tags ADD COLUMN IF NOT EXISTS match_key TEXT`,
@@ -268,6 +272,33 @@ export async function runMigrations() {
   );
 
   await backfillMatchKeys();
+  await backfillTourSlugs();
+}
+
+/**
+ * Give shows imported before tours had pages their tour's identity.
+ *
+ * Same shape as the match-key backfill, and for the same reason: slugify
+ * lives in TypeScript. Shows with no tour never match, so this costs one
+ * empty query per boot once it has run.
+ */
+async function backfillTourSlugs(): Promise<void> {
+  for (;;) {
+    const pending = await db
+      .select({ id: shows.id, tour: shows.tour })
+      .from(shows)
+      .where(sql`${shows.tour} IS NOT NULL AND ${shows.tourSlug} IS NULL`)
+      .limit(500);
+
+    if (pending.length === 0) return;
+
+    for (const show of pending) {
+      await db
+        .update(shows)
+        .set({ tourSlug: slugify(show.tour ?? "") })
+        .where(eq(shows.id, show.id));
+    }
+  }
 }
 
 /**

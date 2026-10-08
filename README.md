@@ -83,6 +83,24 @@ your places and artists first, rather than whatever the whole site posted most
 recently. Since moments have no row of their own, follows and moment comments
 store the `(place, date)` pair directly rather than a foreign key.
 
+### Tours — the level above a moment
+
+A moment is one event: one place, one day. That is right for a concert and too
+small for anything with extent — a cruise visits several ports over a week, a
+festival runs several stages over three days, a tour crosses sixty cities.
+
+So a **tour** holds many moments, at `/tour/<slug>`. It is derived from
+`shows.tour`, which the imports already fill in, rather than stored as rows of
+its own — a tour exists because shows claim to belong to it. A cruise is not a
+special case: it is a tour whose moments happen to be in different cities.
+
+Tours are identified by slug alone rather than per performer, because the case
+they exist for — a cruise, a festival — has many artists on one bill, and
+splitting those per performer would defeat the point.
+
+Deliberately only one level. A festival fits without nesting: the container is
+the festival, and each stage-day is a moment, because a stage is a place.
+
 ### Known shows
 
 A moment born from uploads needs someone to post first, and that person finds

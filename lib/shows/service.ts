@@ -4,7 +4,7 @@ import { db } from "@/lib/db";
 import { shows, tags } from "@/lib/db/schema";
 import { newId } from "@/lib/ids";
 import { asDateString, rowsOf } from "@/lib/media/queries";
-import { isValidEventDate, matchKey } from "@/lib/tags/normalize";
+import { isValidEventDate, matchKey, slugify } from "@/lib/tags/normalize";
 import { resolveTag } from "@/lib/tags/service";
 
 /** One row of a touring history, as the data files in data/shows/ hold it. */
@@ -65,6 +65,9 @@ export async function importShows(
       city: show.city,
       region: show.region ?? null,
       tour: show.tour ?? null,
+      // Identity for the tour's page, alongside the name for display — the
+      // same label/slug split tags use.
+      tourSlug: show.tour ? slugify(show.tour) || null : null,
       setlistJson: show.setlist?.length ? JSON.stringify(show.setlist) : null,
       setlistUrl: show.setlistUrl ?? null,
     };

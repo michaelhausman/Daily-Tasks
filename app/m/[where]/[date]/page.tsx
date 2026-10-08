@@ -10,6 +10,7 @@ import { getCurrentUser } from "@/lib/auth/session";
 import { isAdmin } from "@/lib/config";
 import { findMedia, findMoments } from "@/lib/media/queries";
 import { findShowsAt } from "@/lib/shows/service";
+import { tourAt } from "@/lib/shows/tours";
 import {
   isFollowingMoment,
   likeStateFor,
@@ -43,7 +44,7 @@ export default async function MomentPage({
   const whoFilter =
     typeof rawWho === "string" && isValidSlug(rawWho) ? rawWho : null;
 
-  const [items, moments, comments, following, shows] = await Promise.all([
+  const [items, moments, comments, following, shows, tour] = await Promise.all([
     findMedia(
       { who: whoFilter ? [whoFilter] : [], where: [where], topic: [], dates: [date] },
       { limit: 200, viewerId: user?.id },
@@ -52,6 +53,7 @@ export default async function MomentPage({
     listComments({ kind: "moment", whereSlug: where, eventDate: date }),
     user ? isFollowingMoment(user.id, where, date) : Promise.resolve(false),
     findShowsAt(where, date),
+    tourAt(where, date),
   ]);
 
   const moment = moments[0];
@@ -102,7 +104,6 @@ export default async function MomentPage({
   const uploadHref = `/upload?${uploadParams.toString()}`;
 
   const place = shows.find((s) => s.city);
-  const tours = [...new Set(shows.map((s) => s.tour).filter(Boolean))];
 
   return (
     <div className="space-y-6">
@@ -115,7 +116,16 @@ export default async function MomentPage({
           {place &&
             !whereLabel.endsWith(place.city ?? "") &&
             ` · ${place.city}${place.region ? `, ${place.region}` : ""}`}
-          {tours.length > 0 && ` · ${tours.join(", ")}`}
+          {tour && (
+            <>
+              {" · "}
+              {/* The level above a moment: one night out of a tour, a
+                  festival, or a week on a boat. */}
+              <Link href={`/tour/${tour.slug}`} style={{ color: "#7c5cff" }}>
+                {tour.label}
+              </Link>
+            </>
+          )}
         </p>
 
         <div className="mt-4 flex flex-wrap gap-2">
